@@ -1,0 +1,125 @@
+﻿category,asset,parent,step_name,inferred_tactic_id,inferred_tactic,technique_id,technique_name,technique_tactics
+System,PhysicalMachine,,connect,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+System,PhysicalMachine,,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,SensorOrActuator,PhysicalMachine,connect,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+System,SensorOrActuator,PhysicalMachine,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,SensorOrActuator,PhysicalMachine,manipulate,TA0106,Impair Process Control,T0836,Modify Parameter,Impair Process Control
+System,Machine,Hardware,authenticate,TA0109,Lateral Movement,T0859,Valid Accounts,"Lateral Movement, Persistence"
+System,Machine,Hardware,authenticatedAccess,TA0109,Lateral Movement,T0859,Valid Accounts,"Lateral Movement, Persistence"
+System,Machine,Hardware,bypassAccessControl,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,Machine,Hardware,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,Machine,Hardware,idControl,TA0109,Lateral Movement,T0859,Valid Accounts,"Lateral Movement, Persistence"
+System,Machine,Hardware,_machineAccess,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,Machine,Hardware,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+System,Machine,Hardware,_accessData,TA0100,Collection,T0893,Data from Local System,Collection
+System,Machine,Hardware,passFirmwareValidation,TA0110,Persistence,T0857,System Firmware,"Inhibit Response Function, Persistence"
+System,ECU,Machine,connect,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,ECU,Machine,maliciousFirmwareUpload,TA0110,Persistence,T0857,System Firmware,"Inhibit Response Function, Persistence"
+System,ECU,Machine,udsFirmwareModification,TA0110,Persistence,T0857,System Firmware,"Inhibit Response Function, Persistence"
+System,ECU,Machine,idControl,TA0103,Evasion,T0849,Masquerading,Evasion
+System,ECU,Machine,offline,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+System,ECU,Machine,shutdown,TA0107,Inhibit Response Function,T0816,Device Restart/Shutdown,Inhibit Response Function
+System,ECU,Machine,attemptChangeOperationMode,TA0104,Execution,T0858,Change Operating Mode,"Evasion, Execution"
+System,ECU,Machine,bypassMessageConfliction,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+System,ECU,Machine,_networkServiceMessageInjection,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+System,GatewayECU,ECU,forwarding,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,GatewayECU,ECU,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+System,GatewayECU,ECU,gatewayBypassIDPS,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+System,GatewayECU,ECU,gatewayNoIDPS,TA0107,Inhibit Response Function,T0881,Service Stop,Inhibit Response Function
+System,VehicularApplication,Application,specificAccess,TA0108,Initial Access,T0819,Exploit Public-Facing Application,Initial Access
+System,VehicularApplication,Application,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,VehicularApplication,Application,serviceMessageInjection,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+System,Firmware,VehicularApplication,bypassFirmwareValidation,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+System,Firmware,VehicularApplication,bypassSecureBoot,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+System,Firmware,VehicularApplication,crackSecureBoot,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+System,NetworkClient,Client,fullAccess,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,VehicleNetworkReceiver,Client,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,VehicleNetworkReceiver,Client,impersonateId,TA0103,Evasion,T0849,Masquerading,Evasion
+System,NetworkService,Service,fullAccess,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,UDSService,NetworkService,fullAccess,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,TransmitterService,Service,fullAccess,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,TransmitterService,Service,serviceMessageInjection,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+System,FirmwareUpdaterService,UDSService,udsFirmwareUpload,TA0110,Persistence,T0857,System Firmware,"Inhibit Response Function, Persistence"
+Networking,VehicleNetwork,Network,_networkSpecificAttack,TA0102,Discovery,T0840,Network Connection Enumeration,Discovery
+Networking,VehicleNetwork,Network,accessUninspected,TA0108,Initial Access,T0822,External Remote Services,Initial Access
+Networking,VehicleNetwork,Network,accessNetworkLayer,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,VehicleNetwork,Network,_networkForwarding,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,VehicleNetwork,Network,adversaryInTheMiddle,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Networking,VehicleNetwork,Network,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,VehicleNetwork,Network,messageInjection,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Networking,VehicleNetwork,Network,_bypassIDPS,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+Networking,VehicleNetwork,Network,_noIDPS,TA0107,Inhibit Response Function,T0881,Service Stop,Inhibit Response Function
+Networking,VehicleNetwork,Network,gainLINAccessFromCAN,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,VehicleNetwork,Network,accessUDSservices,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,CANNetwork,VehicleNetwork,_networkSpecificAttack,TA0102,Discovery,T0840,Network Connection Enumeration,Discovery
+Networking,CANNetwork,VehicleNetwork,exploitArbitration,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,CANNetwork,VehicleNetwork,busOffAttack,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,J1939Network,CANNetwork,accessNetworkLayer,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,J1939Network,CANNetwork,eavesdrop,TA0102,Discovery,T0842,Network Sniffing,Discovery
+Networking,J1939Network,CANNetwork,adversaryInTheMiddle,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Networking,J1939Network,CANNetwork,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,J1939Network,CANNetwork,messageInjection,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Networking,J1939Network,CANNetwork,j1939MessageInjection,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Networking,J1939Network,CANNetwork,j1939Attacks,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Networking,J1939Network,CANNetwork,_advancedJ1939Attacks,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Networking,FlexRayNetwork,VehicleNetwork,_networkSpecificAttack,TA0102,Discovery,T0840,Network Connection Enumeration,Discovery
+Networking,FlexRayNetwork,VehicleNetwork,commonTimeBaseAttack,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,FlexRayNetwork,VehicleNetwork,exploitBusGuardian,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,FlexRayNetwork,VehicleNetwork,sleepFrameAttack,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,LINNetwork,VehicleNetwork,_networkSpecificAttack,TA0102,Discovery,T0840,Network Connection Enumeration,Discovery
+Networking,LINNetwork,VehicleNetwork,injectBogusSyncBytes,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,LINNetwork,VehicleNetwork,gainLINAccessFromCAN,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+Communication,Dataflow,,eavesdrop,TA0102,Discovery,T0842,Network Sniffing,Discovery
+Communication,Dataflow,,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Communication,Dataflow,,adversaryInTheMiddle,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Communication,Dataflow,,request,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,Dataflow,,respond,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+Communication,Dataflow,,maliciousTransmitBypassConflitionProtection,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,Dataflow,,maliciousTransmitBypassIDPS,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,Dataflow,,maliciousTransmit,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,Dataflow,,eavesdropId,TA0100,Collection,T0861,Point & Tag Identification,Collection
+Communication,Dataflow,,eavesdropAndBypassMsgConflictionProtection,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+Communication,ConnectionOrientedDataflow,Dataflow,request,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionOrientedDataflow,Dataflow,respond,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+Communication,ConnectionlessDataflow,Dataflow,adversaryInTheMiddle,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Communication,ConnectionlessDataflow,Dataflow,maliciousTransmitNoIDPS,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionlessDataflow,Dataflow,maliciousTransmitBypassConflitionProtection,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionlessDataflow,Dataflow,maliciousTransmitBypassIDPS,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionlessDataflow,Dataflow,maliciousTransmit,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionlessDataflow,Dataflow,transmit,TA0106,Impair Process Control,T0855,Unauthorized Command Message,Impair Process Control
+Communication,ConnectionlessDataflow,Dataflow,eavesdropId,TA0100,Collection,T0861,Point & Tag Identification,Collection
+Communication,ConnectionlessDataflow,Dataflow,eavesdropAndBypassMsgConflictionProtection,TA0106,Impair Process Control,T0856,Spoof Reporting Message,"Evasion, Impair Process Control"
+Security,VehicularCredentials,Credentials,read,TA0100,Collection,T0893,Data from Local System,Collection
+Security,VehicularCredentials,Credentials,readFirmwareAccessKey,TA0100,Collection,T0893,Data from Local System,Collection
+Security,MessageID,,read,TA0100,Collection,T0861,Point & Tag Identification,Collection
+System,EthernetGatewayECU,GatewayECU,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,EthernetGatewayECU,GatewayECU,forwarding,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,EthernetGatewayECU,GatewayECU,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,Router,Service,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+Networking,Router,Service,noFirewallProtection,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+Networking,Router,Service,forwarding,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,Router,Service,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+Networking,EthernetNetwork,VehicleNetwork,physicalAccess,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Networking,EthernetNetwork,VehicleNetwork,accessUninspected,TA0108,Initial Access,T0822,External Remote Services,Initial Access
+Networking,EthernetNetwork,VehicleNetwork,bypassPortSecurity,TA0103,Evasion,T0820,Exploitation for Evasion,Evasion
+Networking,EthernetNetwork,VehicleNetwork,bypassAccessControl,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+Networking,EthernetNetwork,VehicleNetwork,accessDataLinkLayer,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+Networking,EthernetNetwork,VehicleNetwork,accessNetworkLayer,TA0108,Initial Access,T0822,External Remote Services,Initial Access
+Networking,EthernetNetwork,VehicleNetwork,aRPCachePoisoning,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Networking,EthernetNetwork,VehicleNetwork,adversaryInTheMiddle,TA0100,Collection,T0830,Adversary-in-the-Middle,Collection
+Networking,EthernetNetwork,VehicleNetwork,deny,TA0107,Inhibit Response Function,T0814,Denial of Service,Inhibit Response Function
+System,InfotainmentSystem,Machine,fullAccess,TA0111,Privilege Escalation,T0890,Exploitation for Privilege Escalation,Privilege Escalation
+System,InfotainmentSystem,Machine,gainNetworkAccess,TA0109,Lateral Movement,T0886,Remote Services,"Initial Access, Lateral Movement"
+System,InfotainmentSystem,Machine,engineerNetworkAccess,TA0109,Lateral Movement,T0866,Exploitation of Remote Services,"Initial Access, Lateral Movement"
+System,NetworkAccessService,NetworkService,fullAccess,TA0108,Initial Access,T0886,Remote Services,"Initial Access, Lateral Movement"
+Communication,OBD2Connector,,physicalAccess,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,OBD2Connector,,connect,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,OBD2Connector,,bypassConnectorProtection,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,ChargingPlugConnector,,physicalAccess,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,AftermarketDongle,,connectDongle,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,AftermarketDongle,,_connectToNetwork,TA0108,Initial Access,T0864,Transient Cyber Asset,Initial Access
+Communication,CoreEncryptedData,Data,authorizedRead,TA0109,Lateral Movement,T0859,Valid Accounts,"Lateral Movement, Persistence"
+Communication,CoreEncryptedData,Data,authorizedWrite,TA0109,Lateral Movement,T0859,Valid Accounts,"Lateral Movement, Persistence"
+Communication,CoreEncryptedData,Data,readEncrypted,TA0100,Collection,T0893,Data from Local System,Collection
+Communication,CoreEncryptedData,Data,writeEncrypted,TA0107,Inhibit Response Function,T0809,Data Destruction,Inhibit Response Function
+Security,CryptographicKey,Data,read,TA0100,Collection,T0893,Data from Local System,Collection

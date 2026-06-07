@@ -1,0 +1,304 @@
+{
+    "metadata": {
+        "name": "Jeep_Model",
+        "langVersion": "2.0.1",
+        "langID": "org.mal-lang.vehicleLang",
+        "malVersion": "0.1.0-SNAPSHOT",
+        "MAL-Toolbox Version": "2.8.1",
+        "info": "Created by the mal-toolbox model python module."
+    },
+    "assets": {
+        "2": {
+            "name": "D-Bus",
+            "type": "NetworkAccessService",
+            "associated_assets": {
+                "hostMachine": {
+                    "4": "OMAP_DM3730"
+                },
+                "assignedVehicularIdentity": {
+                    "15": "Superuser"
+                },
+                "vulnerabilities": {
+                    "26": "Software_Vulnerability"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -927.0,
+                    "y": -281.0
+                }
+            }
+        },
+        "4": {
+            "name": "OMAP_DM3730",
+            "type": "Machine",
+            "associated_assets": {
+                "machineExecutedApps": {
+                    "2": "D-Bus",
+                    "5": "QNX"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -400.5,
+                    "y": -295.875
+                }
+            }
+        },
+        "5": {
+            "name": "QNX",
+            "type": "OperatingSystem",
+            "associated_assets": {
+                "hostMachine": {
+                    "4": "OMAP_DM3730"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -405.0,
+                    "y": -483.75
+                }
+            }
+        },
+        "7": {
+            "name": "IOC_V850",
+            "type": "ECU",
+            "associated_assets": {
+                "firmware": {
+                    "9": "IOC_Main_Firmware"
+                },
+                "vehiclenetworks": {
+                    "10": "CAN_IHS",
+                    "11": "CAN_C",
+                    "13": "SPI"
+                },
+                "firmwareUpdater": {
+                    "18": "IOC_Update_Service"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 170.66666666666663,
+                    "y": -224.66666666666666
+                }
+            }
+        },
+        "9": {
+            "name": "IOC_Main_Firmware",
+            "type": "Firmware",
+            "associated_assets": {
+                "hardware": {
+                    "7": "IOC_V850"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 284.0,
+                    "y": 187.99999999999997
+                }
+            }
+        },
+        "10": {
+            "name": "CAN_IHS",
+            "type": "CANNetwork",
+            "associated_assets": {
+                "networkECUs": {
+                    "7": "IOC_V850"
+                },
+                "connector": {
+                    "24": "DLC_OBD2"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 325.5,
+                    "y": -594.0
+                }
+            }
+        },
+        "11": {
+            "name": "CAN_C",
+            "type": "CANNetwork",
+            "associated_assets": {
+                "networkECUs": {
+                    "22": "PCM_Module",
+                    "7": "IOC_V850",
+                    "23": "ABS_Module",
+                    "19": "RFH_Module"
+                },
+                "connector": {
+                    "24": "DLC_OBD2"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 546.6666666666667,
+                    "y": -88.66666666666669
+                }
+            }
+        },
+        "13": {
+            "name": "SPI",
+            "type": "VehicleNetwork",
+            "associated_assets": {
+                "networkECUs": {
+                    "7": "IOC_V850"
+                },
+                "infotainment": {
+                    "14": "Uconnect_Radio"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -70.0,
+                    "y": -388.6666666666667
+                }
+            }
+        },
+        "14": {
+            "name": "Uconnect_Radio",
+            "type": "InfotainmentSystem",
+            "associated_assets": {
+                "connectedNetworks": {
+                    "13": "SPI"
+                },
+                "connectPrivileges": {
+                    "15": "Superuser"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -519.0,
+                    "y": 247.5
+                }
+            }
+        },
+        "15": {
+            "name": "Superuser",
+            "type": "VehicularIdentity",
+            "associated_assets": {
+                "assignedApplications": {
+                    "2": "D-Bus"
+                },
+                "connectMachines": {
+                    "14": "Uconnect_Radio"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -856.5,
+                    "y": 144.0
+                }
+            }
+        },
+        "18": {
+            "name": "IOC_Update_Service",
+            "type": "FirmwareUpdaterService",
+            "associated_assets": {
+                "firmwareTarget": {
+                    "7": "IOC_V850"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -36.666666666666686,
+                    "y": 30.0
+                }
+            }
+        },
+        "19": {
+            "name": "RFH_Module",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "11": "CAN_C"
+                },
+                "sensorsOrActuators": {
+                    "20": "TPMS"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 893.0,
+                    "y": -76.0
+                }
+            }
+        },
+        "20": {
+            "name": "TPMS",
+            "type": "SensorOrActuator",
+            "associated_assets": {
+                "hardwarePlatform": {
+                    "19": "RFH_Module"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 856.6666666666666,
+                    "y": 126.66666666666667
+                }
+            }
+        },
+        "22": {
+            "name": "PCM_Module",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "11": "CAN_C"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 918.0,
+                    "y": -246.0
+                }
+            }
+        },
+        "23": {
+            "name": "ABS_Module",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "11": "CAN_C"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 932.0,
+                    "y": -398.0
+                }
+            }
+        },
+        "24": {
+            "name": "DLC_OBD2",
+            "type": "OBD2Connector",
+            "associated_assets": {
+                "interfacingNetworks": {
+                    "10": "CAN_IHS",
+                    "11": "CAN_C"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": 901.5,
+                    "y": -651.0
+                }
+            }
+        },
+        "26": {
+            "name": "Software_Vulnerability",
+            "type": "SoftwareVulnerability",
+            "associated_assets": {
+                "application": {
+                    "2": "D-Bus"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -926.0,
+                    "y": -558.0
+                }
+            }
+        }
+    }
+}

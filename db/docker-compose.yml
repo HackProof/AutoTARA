@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:17
+    container_name: tara-pg17
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: passwd2026
+      POSTGRES_DB: tara_db
+      TZ: Asia/Seoul
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./data:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

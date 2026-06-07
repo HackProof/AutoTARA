@@ -1,0 +1,35 @@
+{
+  "name": "tara.server",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "anonymous",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "temp/**"
+    ]
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.13.5",
+    "ci": "^2.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "form-data": "^4.0.5",
+    "js-yaml": "^4.1.1",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "tar-stream": "^3.1.7",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

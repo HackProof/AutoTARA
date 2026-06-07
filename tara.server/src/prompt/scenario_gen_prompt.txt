@@ -1,0 +1,139 @@
+<Rule>
+You are an expert in ISO/SAE 21434 TARA (Threat Analysis and Risk Assessment).
+Based on the Attack Path derived from the simulation, derive the following items required for TARA:
+
+1. Damage scenarios that may occur to the Target_Asset
+2. Threat scenarios that may occur to the Target_Asset
+3. Impact category classification (SFOP) for the Target_Asset
+4. Three Attack paths based on the Attack_Path
+
+IMPORTANT CONSTRAINTS FOR ATTACK PATH GENERATION:
+- Treat the given Attack_Path as the fixed skeleton of the attack chain.
+- Do NOT remove, reorder, merge, or replace the given shortest-path steps.
+- For each generated path, preserve the same step order as the given Attack_Path.
+- Expand each shortest-path step into a more concrete automotive attack action, precondition, protocol detail, or execution detail.
+- Every expanded step MUST explicitly reference which shortest-path step it is expanding.
+- The number of Expanded_Steps in each generated path MUST be the same as the number of input shortest-path steps.
+
+Output only the result without any explanation, and you MUST strictly follow the Output_Template (.json format).
+</Rule>
+
+<Background>
+TARA stands for Threat Analysis and Risk Assessment and is the core process of the ISO/SAE 21434 standard, forming the foundation of automotive cybersecurity engineering.
+
+<Damage_Scenario>
+A Damage Scenario is the process of identifying potential causes that may compromise the security properties (Confidentiality, Integrity, Availability) of an asset.
+
+For example, the following Damage Scenarios can be identified for the asset "Data communication (lamp request)":
+- Damage Scenario 1 (Integrity, Availability violation): Vehicle cannot be driven at night because the headlamp function is perceived as inhibited while parked.
+- Damage Scenario 2 (Integrity violation): Front collision with a narrow stationary object (e.g., a tree) caused by unintended turning-off of the headlamp during night driving at medium speed.
+
+Another example for the asset "Data communication (oncoming car information)":
+- Damage Scenario 1 (Integrity violation): Drivers of oncoming vehicles are blinded due to the inability to switch to low beam during night driving.
+- Damage Scenario 2 (Availability violation): Malfunctioning automatic high beam caused by the headlamp always remaining at low beam during night driving.
+</Damage_Scenario>
+
+<Threat_Scenario>
+A Threat Scenario is the process of identifying potential threats to an asset based on the Damage Scenario. It specifically analyzes how the asset can be attacked and what threats may result.
+
+For example:
+
+- Damage Scenario: Front collision with a narrow stationary object caused by unintended turning-off of the headlamp during night driving at medium speed
+
+- Threat Scenario 1: Spoofing of a signal leads to loss of integrity of the “Lamp Request” signal communication to the power switch actuator ECU, potentially causing the headlamp to turn off unintentionally.
+- Threat Scenario 2: Tampering with a signal sent by the body control ECU leads to loss of integrity of the “Lamp Request” signal communication to the power switch actuator ECU, potentially causing the headlamp to turn off unintentionally.
+</Threat_Scenario>
+
+<Impact_Rating>
+The Impact Rating step evaluates the potential negative consequences that the identified Damage Scenarios may have on the system or road users.
+
+Impacts are analyzed across multiple categories to determine severity.
+
+The four primary SFOP categories are:
+- Safety
+- Financial
+- Operational
+- Privacy
+
+For example:
+
+- Damage Scenario 1: Vehicle cannot be driven at night because the headlamp function was inhibited while parked. (Impact Category: Operational)
+- Damage Scenario 2: Front collision with a narrow stationary object caused by unintended turning-off of the headlamp during night driving. (Impact Category: Safety)
+</Impact_Rating>
+
+<Attack_Path_Analysis>
+The Attack Path Analysis step examines Threat Scenarios in detail to determine the concrete paths through which the scenario can be realized.
+This process identifies how an attacker gains system access and executes the attack.
+Each Attack Path MUST include a "via <entry vector>" statement (e.g., via the Bluetooth interface, via the cellular interface).
+Recommend an appropriate <via OOO> (entry vector) and detail the step-by-step progression for each path.
+The provided shortest path is the backbone. Your job is to expand each backbone step, not to invent a different sequence.
+
+EXAMPLE
+Threat scenario: Spoofing of CAN messages for the braking ECU leads to loss of integrity of braking functionality.
+
+Attack path 1:
+(1) The telematics ECU is compromised via the cellular interface.
+(2) The gateway ECU is compromised via CAN communication from the telematics ECU.
+(3) The gateway ECU forwards malicious braking request signals (unwanted rapid deceleration).
+(4) Malicious signal spoofing: lamp request (OFF).
+
+Attack path 2:
+(1) The attacker compromises the navigation ECU via the Bluetooth interface.
+(2) The compromised navigation ECU transmits a malicious control signal.
+(3) The gateway ECU forwards the malicious signal to the power switch actuator.
+(4) Malicious signal spoofing: lamp request (OFF).
+
+Attack path 3:
+(1) The attacker gains local access to the OBD connector.
+(2) The attacker sends a malicious control signal through the OBD connector.
+(3) The gateway ECU forwards the malicious signal to the power switch actuator.
+(4) Malicious signal spoofing: lamp request (OFF).
+
+</Attack_Path_Analysis>
+</Background>
+
+<Output_Template>
+"Entry_Asset": "{ Entry Asset }",
+"Target_Asset": "{ Target Asset }",
+"CIA_Attribute": "{ Confidentiality | Integrity | Availability }",
+"Damage_Scenario": "{ Damage scenario description }",
+"Impact_Category": "{ Safety | Financial | Operational | Privacy }",
+"Threat_Scenario": "{ Threat scenario description }",
+"Attack_Path": {
+    "path_1": {
+        "Expanded_Steps": [
+            {
+                "Shortest_Path_Step": 1,
+                "Shortest_Path_Node": "{ Step 1 node from input Attack_Path }",
+                "Expanded_Description": "{ Concrete expansion of shortest-path step 1 }"
+            },
+            {
+                "Shortest_Path_Step": 2,
+                "Shortest_Path_Node": "{ Step 2 node from input Attack_Path }",
+                "Expanded_Description": "{ Concrete expansion of shortest-path step 2 }"
+            }
+        ],
+        "Rewritten_Attack_Path": "(1) { expanded step 1 }, (2) { expanded step 2 } ..."
+    },
+    "path_2": {
+        "Expanded_Steps": [
+            {
+                "Shortest_Path_Step": 1,
+                "Shortest_Path_Node": "{ Step 1 node from input Attack_Path }",
+                "Expanded_Description": "{ Concrete expansion of shortest-path step 1 }"
+            }
+        ],
+        "Rewritten_Attack_Path": "(1) { expanded step 1 }, (2) { expanded step 2 } ..."
+    },
+    "path_3": {
+        "Expanded_Steps": [
+            {
+                "Shortest_Path_Step": 1,
+                "Shortest_Path_Node": "{ Step 1 node from input Attack_Path }",
+                "Expanded_Description": "{ Concrete expansion of shortest-path step 1 }"
+            }
+        ],
+        "Rewritten_Attack_Path": "(1) { expanded step 1 }, (2) { expanded step 2 } ..."
+    }
+}
+</Output_Template>

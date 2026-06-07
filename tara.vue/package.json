@@ -1,0 +1,33 @@
+{
+  "name": "tara.vue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@antv/x6": "^3.1.0",
+    "@fortawesome/fontawesome-free": "^7.1.0",
+    "axios": "^1.13.2",
+    "bootstrap": "^5.3.8",
+    "ci": "^2.3.0",
+    "pinia": "^3.0.4",
+    "pinia-plugin-persistedstate": "^4.7.1",
+    "tslib": "^2.8.1",
+    "uuid": "^13.0.0",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.3",
+    "vue-toastification": "^2.0.0-rc.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.11",
+    "vite-plugin-vue-devtools": "^8.0.3"
+  }
+}

@@ -1,0 +1,791 @@
+// vehicleLang
+// Author: Sotirios Katsikeas (sotkat@kth.se)
+// Last major revision: July 2019
+
+//include "vehicleLangEncryption.mal"
+include "vehicleLangEthernet.mal"
+include "vehicleLangPublicInterfaces.mal"
+// All includes should be placed above this line, and not on included files for better tracebility.
+
+category System {
+    
+    abstract asset PhysicalMachine
+        user info: "Specifies any physical machine."
+    {
+        | connect
+                user info: "Connect leads directly to access on a physical machine since no authentication is done/needed."
+                ->  fullAccess
+
+        | fullAccess
+                developer info: "This is empty in order to be overriden."
+    }
+
+    asset SensorOrActuator extends PhysicalMachine
+        user info: "Specifies physical machines like sensors and actuators."
+    {
+        | connect
+                user info: "Connect leads directly to access on a physical machine since no authentication is done/needed."
+                ->  fullAccess
+
+        | fullAccess
+                user info: "Access means that the attacker has full access on the machine, ex. he can manipulate the actuator's behavior or sensor's measurements."
+                ->  manipulate
+
+        | manipulate
+                developer info: "This is empty for now because it is enough to reach this."
+    }
+
+    asset Machine extends Hardware
+        user info: "Specifies any machine that has higher complexity than a simple actuator or sensor."
+        developer info: "Extended from coreLang."
+    {
+
+        | connect
+                user info: "Attempt to connect to a machine."
+                ->	authenticatedAccess,
+                    connectPrivileges.assume,
+                    connectionVulnerabilities.exploit
+
+        | authenticate
+                user info: "Does the attacker have the credentials of an identity?"
+                ->	authenticatedAccess
+
+        & authenticatedAccess
+                  user info: "One way to gain access to a machine is through legitimate authentication."
+                ->	fullAccess
+
+        | bypassAccessControl [Exponential(0.02)]
+                user info: "An attacker can bypass access control and authenticate to the machine."
+                -> fullAccess
+
+        | fullAccess
+                developer info: "We don't explicitly model root access; that is not a sound primitive. Instead, such an identity can be modelled explicitly by providing an account with access to all machineExecutedApps and all data."
+                +>	_machineAccess
+
+        | idControl
+                user info: "This is used when ID is compromised from dataflow."
+
+        | _machineAccess @hidden
+                developer info: "Again, this is a helper attack step that will also be used from the childs of this asset."
+                ->	deny,
+                    _accessData,
+                    machineExecutedApps.localConnect,
+                    accessVulnerabilities.exploit
+
+        | deny
+                user info: "Perform a DoS attack on the machine."
+                ->	machineExecutedApps.deny,
+                    hostedData.deny
+
+        | _accessData @hidden
+                user info: "A helper attack step to reach request access on data stored on a machine"
+                ->  hostedData.attemptRead,
+                    hostedData.attemptWrite,
+                    hostedData.attemptDelete
+
+        | passFirmwareValidation
+                developer info: "Again, this is a blank helper attack step that will also be used from the childs of this asset."
+
+        | udsFirmwareModification
+                developer info: "This is a blank helper attack step that should be reached from FirmwareUpdaterService."
+
+        | passUdsFirmwareModification
+                developer info: "This is a blank helper attack step that should be reached from FirmwareUpdaterService."
+
+        | gainNetworkAccess
+                user info: "This attack step will be only implemented on the infotainment system asset."
+    }
+
+    asset ECU extends Machine
+        user info: "Specifies any ECU/MCU/controller in a vehicle."
+        developer info: "Created as new parent class because the existing Machine had many unrelated attacks."
+    {
+        | connect
+                user info: "Attackers can attempt to connect to the ECU and change the operation mode if they have access to the network, services, dataflows, etc..."
+                +>  attemptChangeOperationMode
+                    //firmwareUpdater.networkConnectUninspected
+
+        | maliciousFirmwareUpload
+                user info: "Maliciously uploading a forged firmware leads to full access on the ECU and the ability to inject/eavesdrop messages on the previous running services and network."
+                ->  fullAccess,
+                    _ecuNetworkAccess
+
+        & uploadFirmware
+                user info: "Uploading firmware leads to full access on the ECU and the ability to inject/eavesdrop messages on the previous running services and network."
+                ->  _ecuNetworkAccess
+
+        | _ecuNetworkAccess @hidden
+                developer info: "This a helper attack step because both above attack steps are leading to the same connections."
+                ->      vehiclenetworks.accessUninspected,
+                        vehiclenetworks.eavesdrop,
+                        vehiclenetworks.messageInjection,
+                        vehiclenetworks.j1939Attacks,
+                        vehiclenetworks._networkSpecificAttack,
+                        vehiclenetworks._networkForwarding
+
+        | udsFirmwareModification
+                user info: "This attack step is reached after access on FirmwareUpdaterService."
+                ->  firmwareUpdater.udsFirmwareUpload
+
+        | passUdsFirmwareModification
+                user info: "Same as below, if the cryptographic key is accessed."
+                ->  firmwareUpdater.passUdsFirmwareUpload
+
+        | passFirmwareValidation
+                user info: "If the firmware validation key is stored in the ECU, this means that the firmware validation is passed and a new firmware can be uploaded."
+                ->  uploadFirmware
+
+        | fullAccess
+                user info: "Attackers have access to the ECU if they have compromised its firmware (after custom firmware upload), bypassed access control (after authentication via diagnostics) or properly authenticated themselves."
+                +>	sensorsOrActuators.manipulate,
+                    changeOperationMode,
+                    gainLINAccessFromCAN,
+                    bypassMessageConfliction,
+                    _ecuNetworkAccess
+
+        | idControl
+                user info: "This attack step is reached after the ID is compromised from dataflow and allows an attacker to manipulate the connected sensors or actuators."
+                ->  sensorsOrActuators.manipulate
+
+        | offline
+                user info: "When the ECU is taken offline by some other attack step. Offline means that the ECU is still powered on but unable to communicate on its bus. The effort needed to achieve this is applied on the distributions of the parent attacks. This also means that the connected sensors or actuators can be manipulated."
+                ->	deny,
+                    bypassMessageConfliction
+
+        | shutdown
+                user info: "When the ECU is powered off by some other attack step. The effort needed to achieve this is applied on the distributions of the parent attacks."
+                ->	bypassMessageConfliction,
+                    deny // Deny access to data and machineExecutedApps
+
+        & changeOperationMode
+                user info: "Put the ECU into diagnostics (if vehicle is moving slowly or is stopped) or even update mode (bootmode). Leads to shutdown since attacker must have achieved access on this ECU to reach this step."
+                // This can bypass message conflictions and IDPS because the legitimate ECU will no lorger send messages and the attacker can imitate it, if carefull.
+                -> 	shutdown,
+                    firmware.maliciousFirmwareModification,
+                    uploadFirmware
+
+        & attemptChangeOperationMode [Exponential(0.1)]
+                user info: "Put the ECU into diagnostics (if vehicle is moving slowly or is stopped) or even update mode (bootmode) but after some effort. This stops ECU from communicating on its bus -> offline"
+                -> 	offline,
+                    bypassMessageConfliction,
+                    firmware.maliciousFirmwareModification
+
+        # operationModeProtection
+                user info: "Either prevent diagnostics mode after vehicles starts moving or allow diagnostics mode only after some physical change is done on vehicle."
+                developer info: "Charlie Miller and Chris Valasek, CAN message injection (2016)."
+                ->	changeOperationMode,
+                    attemptChangeOperationMode
+
+        | bypassMessageConfliction
+                user info: "Bypass message confliction protection mechanisms by changing ECU's operation mode -> no conflicts -> service message injection."
+                ->  machineExecutedApps.serviceMessageInjection
+
+        & _networkServiceMessageInjection @hidden
+                user info: "Inject forged service messages that could notify about vehicle's fault or report fake status (speed, operation mode, etc.). This can even lead to unresponsive ECU (TPMS). This is reached from network access."
+                ->	machineExecutedApps.serviceMessageInjection
+
+        # messageConflictionProtection
+                user info: "Defend against message injection by using message confliction mechanisms (detect messages with own ID). This acts like a host-based IDS."
+                developer info: "Pierre Kleberger, Tomas Olovsson, and Erland Jonsson, Security Aspects of the In-Vehicle Network in the Connected Car (2011)."
+                ->	_networkServiceMessageInjection
+
+        | gainLINAccessFromCAN
+                user info: "There are techniques that make it easy to gain access to the LIN bus through a CAN-bus node."
+                developer info: "Junko Takahashi et al., Automotive Attacks and Countermeasures on LIN-Bus (2017)"
+                //  NOTE: This should happen only with a probability and not always maybe?
+                ->	vehiclenetworks.gainLINAccessFromCAN
+
+    }
+
+    asset GatewayECU extends ECU
+        user info: "Specifies the ECU that acts as a gateway/firewall on a vehicle."
+    {
+        | fullAccess
+                developer info: "Overriding from ECU"
+                +>	trafficVNetworks.adversaryInTheMiddle, // This will act as Firewall and IDPS are disabled!
+                    forwarding
+
+        | forwarding
+                developer info: "Forwarding is the lightest interaction with the gateway, where the gateway simply retransmits received messages. Vulnerabilities may, however, lead to compromise of the gateway as well as of the associated firewall. Therefore, Forwarding leads to Connect."
+                -> 	connect,
+                    bypassFirewall  // If firewall is not enabled then bypass it.
+
+        & bypassFirewall
+                user info: "If firewall is disabled, then attacker can bypass it."
+                ->	gatewayBypassIDPS, // Added here to stop those attacks when firewall is enabled.
+                    gatewayNoIDPS,
+                    trafficVNetworks.accessUDSservices
+
+        # firewallProtection // Firewall is just a defense on gateway ECU.
+                user info: "Firewall protection comes from the existence of a correctly configured firewall."
+                -> bypassFirewall
+
+        | deny
+                user info: "Perform denial of service attack on the connected networks."
+                -> 	trafficVNetworks.deny
+
+        // IDPS is modeled as a centralized inline IDPS
+        E  idpsExists
+                user info: "Check for the existence of an IDPS."
+                <- idps
+                -> gatewayBypassIDPS
+
+        & gatewayBypassIDPS
+                user info: "Bypass IDPS protection when IDPS is in place, but only if firewall is disabled."
+                -> trafficVNetworks._bypassIDPS
+
+        !E idpsDoesNotExist
+                user info: "Check for the non existence of an IDPS."
+                <-	idps
+                ->	gatewayNoIDPS
+
+        & gatewayNoIDPS
+                user info: "IDPS is disabled so the attacker can access the network unrestricted, but only if firewall is also disabled."
+                -> trafficVNetworks._noIDPS,
+                   trafficVNetworks.accessNetworkLayer // Moved it here from forwarding to allow imediate network access only if idps does not exist.
+    }
+
+    abstract asset VehicularApplication extends Application
+        developer info: "Extended from coreLang."
+    {   
+        | specificAccess
+                +>      hostMachine.connect
+        | fullAccess
+                +>      hostMachine.connect,
+                        assignedVehicularIdentity.attemptAssume
+
+        | serviceMessageInjection
+                developer info: "This is an empty attack step that will only be used from the childs of this asset."
+    }
+
+    asset Firmware extends VehicularApplication
+        user info: "Specifies the firmware running on an ECU as an application."
+    {
+        | maliciousFirmwareModification
+                user info: "Perform a firmware update either by cracking Secure Boot or worse by exploiting the absence of it."
+                ->  bypassSecureBoot,
+                    crackSecureBoot
+
+        & crackFirmwareValidation [Exponential(0.2)]
+                user info: "Crack firmware validation if it is enabled."
+                ->  hardware.maliciousFirmwareUpload
+
+        & bypassFirmwareValidation
+                user info: "Bypass firmware validation if it is not enabled."
+                ->  hardware.maliciousFirmwareUpload
+
+        # firmwareValidation
+                user info: "Code signing and verification during upload, use of strong checksum functions and/or don't distribute the private keys for signing."
+                developer info: "Rubicon - Zero-knowledge Armor for Automotive Security, RubiconLabs"
+                ->	bypassFirmwareValidation
+
+        & bypassSecureBoot
+                user info: "Bypass Secure Boot if it is not enabled Then validate a firmware update either by cracking (brute forcing) the checksum or worse by exploiting the absence of verification."
+                ->  bypassFirmwareValidation,
+                    crackFirmwareValidation
+
+        | crackSecureBoot [Exponential(0.1)]
+                user info: "Crack Secure Boot if it is enabled is hard"
+                ->  hardware.maliciousFirmwareUpload
+
+        # secureBoot
+                user info: "SecureBoot is a protection mechanism that validates the boot software and the firmware at system boot time."
+                developer info: "SecureBoot should make running of forged firmware even harder when enabled. Therefore, it stops firmware validation attack steps."
+                ->  bypassSecureBoot
+    }
+
+    asset OperatingSystem extends VehicularApplication {
+       // Currently simple ECUs and GatewayECUs don't have an OS. But the infotainment system has.
+    }
+
+    asset Service extends VehicularApplication {
+        // Intentionally left blank
+    }
+
+    asset Client extends VehicularApplication {
+        // Intentionally left blank
+    }
+
+    asset NetworkClient extends Client
+        user info: "Represents a client connected to a service running on a network."
+    {
+        | fullAccess
+                +>	dataflows.request
+    }
+
+    asset VehicleNetworkReceiver extends Client
+        user info: "Represents a receiver/client for connectionless dataflows connected to a transmitter running on a vehicle network."
+    {
+        | fullAccess
+                +>	dataflows.eavesdrop
+
+        | impersonateId
+                ->  hostMachine.idControl
+    }
+
+    asset NetworkService extends Service
+        user info: "Represents a service running on top of a network."
+    {
+
+        | fullAccess
+                +>	dataflows.respond
+    }
+
+    asset UDSService extends NetworkService
+        user info: "Represents an ISO 14229 - Unified Diagnostics Service (UDS) running on an ECU."
+        developer info: "Pierre Kleberger, On Securing the Connected Car: Methods and Protocols for Secure Vehicle Diagnostics, PhD Thesis (2015)"
+    {
+        | fullAccess
+                user info: "Access on an UDS service provides access on stored data, possibility to update firmware and change operation status of the ECU."
+                +>	dataflows.respond,
+                    hostMachine._accessData
+    }
+
+    asset TransmitterService extends Service
+        user info: "Represents a service/transmitter running on an ECU and on top of a vehicle network."
+    {
+        | fullAccess
+                +>	dataflows.transmit,
+                    dataflows.deny // This is only possible here because only one Transmitter can be connected to a conectionless dataflow
+
+        | serviceMessageInjection
+                user info: "Tamper dataflows that are conneceted to this network transmitter after bypassing message confliction on the ECU."
+                ->	dataflows.maliciousTransmit,
+                    dataflows.eavesdropId
+    }
+
+    asset FirmwareUpdaterService extends UDSService
+        user info:"Specifies the firmware updating procedure/UDS service on an ECU."
+    {
+        | fullAccess
+                +>  firmwareTarget.udsFirmwareModification
+
+        & udsFirmwareUpload
+                user info: "If UDS Security Access defense is disabled, attacker can maliciously upload firmware."
+                ->  firmwareTarget.maliciousFirmwareUpload
+
+        | passUdsFirmwareUpload
+                user info: "If the cryptographic key of Security Access is read then, the firmware upload procedure can easily be initiated."
+                ->  firmwareTarget.passFirmwareValidation
+
+        # udsSecurityAccess
+                user info: "Firmware upload via UDS is protected by a UDS service called Security Access. This is an authentication protocol which uses a challenge-response scheme with cryptographic keys."
+                developer info: "Interview with domain experts conducted by Nedo"
+                ->  udsFirmwareUpload
+    }
+
+}
+
+category Networking {
+
+    asset VehicleNetwork extends Network
+        user info: "Vehicle Networks include CAN bus, FlexRay and LIN bus."
+        developer info: "Extended from coreLang."
+    {
+        //Override
+        | physicalAccess
+                user info: "Physical access to the network. Merged coreLang asset Network with vehicleLang asset Network"
+                +>	accessNetworkLayer
+        
+        | _networkSpecificAttack @hidden
+                user info: "This attack step should work as an intermediate step to reach network specific attacks."
+
+        | accessUninspected
+                user info: "Access implies the possibility to submit packets over the network. In a generic network, it does not imply the possibility to listen to others' traffic on the network. You are outside the router but with a possibility to communicate in to the network."
+                developer info: "Overriding from network"
+                +>	deny,
+                    applications.networkConnectUninspected,
+                    networkECUs.connect, // Reach ECUs connected network and try to connect, not access!
+                    accessUDSservices // But access on UDS services is possible because they can be protected by UdsSecurityAccess
+
+        | accessNetworkLayer
+                user info: "Network layer access implies the possibility to submit messages over the network and the possibility to listen to others' traffic on the network."
+                developer info: "Overriding from network"
+                ->	accessUninspected,
+                    _networkForwarding,
+                    eavesdrop,
+                    messageInjection,
+                    _networkSpecificAttack,
+                    j1939Attacks,
+                    networkECUs._networkServiceMessageInjection // This is for the case where the message confliction is disabled but attacking from the network.
+
+        | _networkForwarding @hidden
+                user info: "An attacker that has access to a network connected ECU can also perform forwarding on that network using the connected GatewayECU. (helper attack)"
+                -> trafficGatewayECU.forwarding
+
+        // Override
+        | eavesdrop
+                developer info: "Those two extra attack steps are needed so that the compromised MessageID scenario to be able to work. Merged coreLang asset Network with vehicleLang asset Network"
+                +>  dataflows.eavesdrop,
+                    dataflows.eavesdropId,
+                    dataflows.eavesdropAndBypassMsgConflictionProtection
+
+        // Override
+        | adversaryInTheMiddle
+                user info: "This attack is reached only as an attacker's entry point or from GatewayEcu.fullAccess. It leads, among others, to dataflows MitM. Merged coreLang asset Network with vehicleLang asset Network"
+                +>	accessNetworkLayer,
+                    eavesdrop,
+                    dataflows.adversaryInTheMiddle,
+                    trafficGatewayECU.deny
+
+        // Override
+        | deny
+                user info: "The network is made unavailable. Merged coreLang asset Network with vehicleLang asset Network"
+                +> 	dataflows.deny
+                
+        // This will require, by default, some effort especially for maliciousRespond, because message conflictions mechanisms are by default enabled.
+        // This attack is only reached as an entry point or from GatewayEcu.fullAccess, also see serviceMessageInjection.
+        | messageInjection
+                user info: "Inject messages to dataflows means that attacker can try to transmit messages on the vehicle network but might not be sucessful because of the message confliction protection. It is also possible to perform a DoS."
+                ->	dataflows.maliciousTransmitBypassConflitionProtection,
+                    deny
+
+        | _bypassIDPS @hidden
+                user info: "Bypass IDPS on dataflows when the GatewayECU has IDPS enabled. (helper attack)"
+                ->	dataflows.maliciousTransmitBypassIDPS
+
+        | _noIDPS @hidden
+                user info: "When no IDPS is connected/present on the GatewayECU. (helper attack)"
+                ->	dataflows.maliciousTransmitNoIDPS
+
+        | gainLINAccessFromCAN
+                developer info: "This is an empty attack that will only be implemented on LINNetwork and it will be invoked by the ECU."
+
+        | j1939Attacks
+                user info: "This is an empty attack that will only be implemented on J1939Network and it will be invoked by the ECU or by having network access."
+                developer info: "Yelizaveta Burakova, Bill Hass, Leif Millar, and Andre Weimerskirch, Truck Hacking: An Experimental Analysis of the SAE J1939 Standard (2016)"
+
+        | accessUDSservices
+                ->  networkFwUpdater.fullAccess
+    }
+
+    asset CANNetwork extends VehicleNetwork
+        user info: "Represents the CAN bus network and the attacks that are possible on it."
+    {
+        | _networkSpecificAttack @hidden
+                user info: "This attack step should work as an intermediate step to reach network specific attacks."
+                ->	busOffAttack,
+                    exploitArbitration
+
+        | exploitArbitration [Exponential(0.1)]
+                user info: "Exploiting the arbitration mechanism for message prioritization in CAN bus can lead to invalidation of legitimate messages/DoS and allow message tampering/injection."
+                developer info: "Charlie Miller and Chris Valasek, 'Jeep Hack' & Pal-Stefan Murvay and Bogdan Groza, Security shortcomings and countermeasures for the SAE J1939 commercial vehicle bus protocol (2017)"
+                ->	dataflows.maliciousTransmit, // This is different from the messageInjection attack because, if successful, allows direct malicious respond and request.
+                    deny
+
+        & busOffAttack [Exponential(0.1)]
+                user info: "Exploits the error-handling scheme of in-vehicle networks to disconnect good/uncompromised ECUs or cause DoS on the entire network. This is an easy to mount attack. This is also applicable on CAN-FD."
+                developer info: "Kyong-Tak Cho and Kang G. Shin, Error Handling of In-vehicle Networks Makes Them Vulnerable (2016)"
+                ->	networkECUs.offline,
+                    deny
+
+        # busOffProtection
+                user info: "Based on the defence mechanism proposed by the related paper"
+                developer info: "Kyong-Tak Cho and Kang G. Shin, Error Handling of In-vehicle Networks Makes Them Vulnerable (2016)"
+                ->	busOffAttack
+    }
+
+    asset J1939Network extends CANNetwork
+        user info: "SAE J1939 is a CAN-based protocol employed in many heavy duty vehicles."
+    {
+        // Override
+        | accessNetworkLayer
+                user info: "Network layer access implies the possibility to submit messages over the network. It does not imply the possibility to listen to others' trafic on the network."
+                ->	deny,
+                    eavesdrop,
+                    messageInjection,
+                    networkECUs.connect
+
+        | eavesdrop
+                user info: "An attacker can eavesdrop/sniff the network."
+                developer info: "Luca Dariz, Massimiliano Ruggeri, Gianpiero Costantino and Fabio Martinelli, A Survey over Low-Level Security Issues in Heavy Duty Vehicles (2016)"
+                -> 	j1939dataflows.eavesdrop
+
+        | adversaryInTheMiddle
+                    user info: "Attackers can sometimes intercept and tamper with communications."
+                +> 	accessNetworkLayer,
+                    eavesdrop,
+                    j1939dataflows.adversaryInTheMiddle
+
+        | deny
+                user info: "A DoS attack can happen on a J1939 network with three possible ways as described on the paper below."
+                developer info: "Subhojeet Mukherjee et al., Practical DoS Attacks on Embedded Networks in Commercial Vehicles (2016)"
+                -> 	j1939dataflows.deny
+
+        | messageInjection
+                developer info: "Overriding from parent because in this type of networks, messageInjection should not happen with the same way."
+
+        | j1939MessageInjection
+                user info: "Inject messages to J1939 means that attacker can make requests towards other J1939 nodes or PGNs (Parameter Group Number) and after effort to maliciously respond."
+                ->	j1939dataflows.request,
+                    j1939dataflows.maliciousRespond
+
+        | j1939Attacks
+                user info: "This attack step should work as an intermediate step to reach J1939 network specific attacks."
+                ->	eavesdrop,
+                    _advancedJ1939Attacks,
+                    j1939dataflows.maliciousRespond // Respond is generally always supported but requests might not.
+
+        & _advancedJ1939Attacks @hidden
+                user info: "The attacks on this step are advanced in way that if the J1939 protocol is not fully supported, then those might not be sucessful."
+                developer info: "Pal-Stefan Murvay and Bogdan Groza, Security shortcomings and countermeasures for the SAE J1939 commercial vehicle bus protocol (2017)"
+                ->	deny,
+                    j1939MessageInjection
+
+        # noFullJ1939Support
+                user info: "If only limited parts of the J1939 protocol are used then the J1939 specific attacks might not work. For example, requests might not be supported."
+                developer info: "Pal-Stefan Murvay and Bogdan Groza, Security shortcomings and countermeasures for the SAE J1939 commercial vehicle bus protocol (2017)"
+                -> _advancedJ1939Attacks
+    }
+
+    asset FlexRayNetwork extends VehicleNetwork
+        user info: "Represents the FlexRay network and the attacks that are possible on it."
+    {
+        | _networkSpecificAttack @hidden
+                user info: "This attack step should work as an intermediate step to reach network specific attacks."
+                ->	commonTimeBaseAttack,
+                    exploitBusGuardian,
+                    sleepFrameAttack
+
+        | commonTimeBaseAttack [Gamma(2.0,5.0)]
+                user info: "Send more than needed (> n/3 where n=# of nodes) SYNC messages within one communication cycle to make the whole network inoperable."
+                developer info: "Marko Wolf, Security Engineering for Vehicular IT Systems, Vieweg+Teubner (2009)"
+                ->	deny
+
+        | exploitBusGuardian [Exponential(0.15)]
+                user info: "Utilize Bus Guardian for sending well-directed faked error messages to deactivate controllers. BusGuardian is hardened so much effort is needed."
+                developer info: "Marko Wolf, Security Engineering for Vehicular IT Systems, Vieweg+Teubner (2009) & Philipp Mundhenk, Sebastian Steinhorst and Suhaib A. Fahmy, Security Analysis of Automotive Architectures using Probabilistic Model Checking (2015)"
+                ->	networkECUs.offline
+
+        & sleepFrameAttack [Exponential(0.1)]
+                user info: "Send well-directed forged sleep frames to deactivate power-saving capable FlexRay controller."
+                developer info: "Marko Wolf, Security Engineering for Vehicular IT Systems, Vieweg+Teubner (2009)"
+                ->	networkECUs.offline
+
+        # powerSavingIncapableNodes // Might need to be moved on ECU ??? But I leave it here for now...
+                user info: "If FlexRay power-saving is not enabled then perform sleep frame attack."
+                developer info: "Marko Wolf, Security Engineering for Vehicular IT Systems, Vieweg+Teubner (2009)"
+                ->	sleepFrameAttack
+    }
+
+    asset LINNetwork extends VehicleNetwork
+        user info: "Represents the LIN bus network and the attacks that are possible on it"
+    {
+        | _networkSpecificAttack @hidden
+                user info: "This attack step should work as an intermediate step to reach network specific attacks."
+                ->	injectHeaderOrTimedResponse,
+                    injectBogusSyncBytes
+
+        | injectBogusSyncBytes [Exponential(0.1)]
+                user info: "Sending frames with bogus synchronization bytes within the SYNCH field makes the local LIN network inoperative or causes at least serious malfunctions"
+                developer info: "Marko Wolf, Security Engineering for Vehicular IT Systems, Vieweg+Teubner (2009)"
+                -> deny
+
+        | gainLINAccessFromCAN
+                // This attack is reached from ECU
+                user info: "There are techniques that make it easy to gain access to the LIN bus through a CAN-bus node."
+                developer info: "Junko Takahashi et al., Automotive Attacks and Countermeasures on LIN-Bus (2017)"
+                ->	accessNetworkLayer
+
+        & injectHeaderOrTimedResponse [Exponential(0.1)]
+                user info: "This is a specific attack that can happen on LIN bus exploiting the error handling mechanism, but it is not so easy."
+                developer info: "Junko Takahashi et al., Automotive Attacks and Countermeasures on LIN-Bus (2017)"
+                ->	dataflows.maliciousTransmit // This is different from the messageInjection attack because, if successful, allows direct malicious respond and request.
+
+        # headerOrTimedResponseProtection
+                user info: "Based on the defense mechanism proposed by the related paper."
+                developer info: "Junko Takahashi et al., Automotive Attacks and Countermeasures on LIN-Bus (2017)"
+                ->	injectHeaderOrTimedResponse
+
+        // LIN is also unprotected against forged messages. So messageInjection exists also here.
+    }
+}
+
+category Communication {
+
+    abstract asset Dataflow
+        user info: "Dataflow is a channel that contains Data in transit."
+    {
+        | eavesdrop
+                user info: "An attacker that eavesdrops on the data flow, can access the contained data. That data may, in turn, be encrypted, thus preventing a breach of confidentiality."
+                ->	data.read
+
+        | deny
+                user info: "A denial-of-service-attack on the dataflow makes the contained data inaccessible. The information may, however also be available elsewhere."
+                ->	data.delete
+
+        | adversaryInTheMiddle
+
+        | request
+
+        | respond
+
+        | maliciousTransmitNoIDPS
+
+        | maliciousTransmitBypassConflitionProtection
+
+        | maliciousTransmitBypassIDPS
+
+        | maliciousTransmit
+
+        & eavesdropId
+
+        & eavesdropAndBypassMsgConflictionProtection
+    }
+
+    asset ConnectionOrientedDataflow extends Dataflow
+        user info: "A connection oriented dataflow is a unicast/multicast transmission that contains Data in transit."
+    {
+        | adversaryInTheMiddle
+                user info: "An attacker that man-in-the-middles the data flow, can control the contained data. That data may, in turn, be encrypted and authenticated, thus preventing a breach of confidentiality and integrity."
+                +>	eavesdrop,
+                    deny,
+                    request,
+                    respond,
+                    data.write,
+                    data.read,
+                    data.delete
+
+        | request
+                ->	services.networkConnectUninspected
+
+        | respond
+                ->	clients.networkConnectUninspected
+
+        | maliciousRespond [Exponential(0.614)]
+                user info: "Confliction protection mechanism does not prevent malicious responds, but it typically takes time for the attacker to bypass it."
+                -> respond
+    }
+
+    asset ConnectionlessDataflow extends Dataflow
+        user info: "A connectionless dataflow is a multicast/broadcast transmission that contains Data in transit."
+        developer info: "In a broadcast network, there is no need to have clients because everyone receives the message. Additionally, in an event-driven network like CAN, there is no need for request."
+    {
+        | eavesdrop
+                user info: "An attacker that eavesdrops on the data flow, can access the contained data. That data may, in turn, be encrypted, thus preventing a breach of confidentiality."
+                -> 	data.read
+
+        | adversaryInTheMiddle
+                user info: "An attacker that man-in-the-middles the data flow, can control the contained data. That data may, in turn, be encrypted and authenticated, thus preventing a breach of confidentiality and integrity."
+                +> 	eavesdrop,
+                    deny,
+                    data.write,
+                    data.read,
+                    data.delete,
+                    transmit // Acts like IDPS is disabled, because MitM attacks are not easily, or not at all, detected by IDPS.
+                    // This agrees with the current securiCore implementation. MiTM leads to direct request/respond.
+
+        | maliciousTransmitNoIDPS
+                user info: "Perform a malicious transmission when IDPS is disabled on GatewayECU. However even when IDPS is off effort is needed to bypass message confliction mechanism."
+                ->	maliciousTransmitBypassConflitionProtection
+
+        | maliciousTransmitBypassConflitionProtection [Exponential(0.314)]
+                user info: "Confliction protection mechanism does not prevent malicious transmissions, but it typically takes time for the attacker to bypass it."
+                ->  transmit,
+                    eavesdropAndBypassMsgConflictionProtection
+
+        | maliciousTransmitBypassIDPS [Exponential(0.613)]
+                user info: "IDPS's does not prevent all malicious transmissions, and it typically takes time for the attacker to bypass it."
+                developer info: "The time to bypass a tuned and updated IDPS is studied in 'T. Sommestad, H. Holm, M. Ekstedt, Estimates of success rates of remote arbitrary code execution attacks, Information Management & Computer Security (2012)' and 'H.Holm, T.Sommestad, U.Franke, M.Ekstedt, Success rate of remote code execution attacks - expert assessments and observations, Journal of Universal Computer Science 18 (6) (2012)'"
+                ->	transmit
+
+        | maliciousTransmit
+                user info: "The act of trying to maliciously transmit. This happens when IDPS is not in place so the attacker can make malicious transmissions unobstructed. Reached only from network specific attacks and network service."
+                ->	transmit
+
+        | transmit
+                user info: "The result of a successful transmit."
+                ->	transmitter.networkConnectUninspected
+
+        & eavesdropId
+                user info: "The attacker was able to eavesdrop the unique ID of the message."
+                ->  dataflowId.read
+
+        & eavesdropAndBypassMsgConflictionProtection
+                user info: "The attacker was able to eavesdrop the unique ID of the message while he also managed to bypass the confliction protection mechanism ."
+                ->  dataflowId.read
+    }
+}
+
+category Security {
+
+    asset VehicularIdentity extends Identity
+        developer info: "Extended from coreLang."
+    {
+        | assume
+                user info: "A compromised identity leads to authentication on machines, access rights on data and also authentication on other connected identities."
+                +> 	accessedMachines.authenticate,
+                    connectMachines.authenticate,
+                    readPrivData.authorizedRead,
+                    writePrivData.authorizedWrite,
+                    deletePrivData.authorizedDelete,
+                    childId.attemptAssume
+    }
+
+    asset VehicularCredentials extends Credentials
+        developer info: "Extended from coreLang."
+    {
+        | read
+                +> 	identities.attemptAssume,
+                    readFirmwareAccessKey
+
+        | readFirmwareAccessKey
+                user info: "The action of reading a stored firmware validation/access key."
+                ->  identities[VehicularIdentity].connectMachines.passFirmwareValidation,
+                    identities[VehicularIdentity].connectMachines.passUdsFirmwareModification,
+                    identities[VehicularIdentity].accessedMachines.passFirmwareValidation,
+                    identities[VehicularIdentity].accessedMachines.passUdsFirmwareModification
+    }
+
+    asset MessageID
+        user info: "Represents the ID that resides on the header of a transmitted packet/message/dataflow."
+    {
+        | read
+                user info: "The action of reading the message ID transfered by the dataflow."
+                ->  dataflow.receiver.impersonateId
+    }
+
+}
+
+associations {
+    Machine	[hostMachine]                   0..1 <-- machineExecution       --> *           [machineExecutedApps]   VehicularApplication
+    VehicularIdentity 	[vehicularIdentity]     * <-- AccessPrivileges	        --> *           [accessedMachines]      Machine
+        user info: "These identities grant access to the machine."
+    VehicularIdentity 	[connectPrivileges]     * <-- ConnectionPrivileges      --> *           [connectMachines]       Machine
+        user info: "These privileges are granted to anyone who connects to a machine."
+    VehicularIdentity 	[assignedVehicularIdentity]     * <-- Assignment                --> *           [assignedApplications]  VehicularApplication
+        user info: "Applications needs to be granted certain privileges when executing on a platform. When the application is compromised, the attacker gains its privileges on the platform."
+    //VehicularIdentity     [vehicularIdentities]         * <-- Credentials               --> *           [vehicularCredentials]  VehicularCredentials
+    VehicleNetwork 	[networks]                      * <-- Communication             --> *           [dataflows]             Dataflow
+        user info: "In general, networks use dataflows for communication."
+    //VehicleNetwork     [machineNetworks]               * <-- MachineConnection         --> *           [networkMachines]       Machine
+    //     user info: "Machines can be connected to networks. If services are not explicitly connected to other networks, it is assumed that they are communicating over the physically connected one."
+    J1939Network        [j1939networks]         * <-- J1939Communication        --> *           [j1939dataflows]         ConnectionOrientedDataflow
+        user info: "A J1939 network uses connection oriented dataflows for communication although it is a CAN-based network."
+    Dataflow    [dataflow]                      0..1 <-- DataTransfer           --> 0..1        [data]                  Data
+        user info: "The dataflow transmits data."
+        developer info: "A dataflow cannot feature multiple data, as these may have different properties, e.g. one authenticated and one not."
+    Dataflow    [dataflows]                     * <-- Request                   --> *           [clients]               NetworkClient
+    Dataflow	[dataflows]                     * <-- Response                  --> *           [services]              NetworkService
+        user info: "A network service or a network client makes use of dataflows that can be either connection oriented or connectionless."
+    ConnectionlessDataflow      [dataflows]     * <-- Transmission              --> 0..1        [transmitter]           TransmitterService
+        user info: "A transmitter service on a vehicle network uses connectionless dataflows for transmitting data."
+    ConnectionlessDataflow      [dataflows]     * <-- Transmission              --> *           [receiver]              VehicleNetworkReceiver
+        user info: "A receiver uses connectionless dataflows for receiving data on a vehicle network."
+    ConnectionlessDataflow      [dataflow]      * <-- DataflowID                --> 0..1        [dataflowId]            MessageID
+        user info: "Each bus network dataflow has a unique identifier."
+    IDPS        [idps]                          0..1 <-- IDPSProtection         --> 1	        [idpsGatewayECU]        GatewayECU
+        user info: "An IDPS can be connected to a GatewayECU. Here it is modeled as a centralized inline IDPS."
+    Machine     [connectionVulnerableMachine]   * <-- ConnectionVulnerability   --> 0..1        [connectionVulnerabilities]     Vulnerability
+    Machine	[accessVulnerableMachine]       * <-- AccessVulnerability       --> 0..1        [accessVulnerabilities]         Vulnerability
+    VehicleNetwork      [vehiclenetworks]       * <-- EcuConnection             --> *           [networkECUs]           ECU
+    VehicleNetwork 	[trafficVNetworks]      * <-- GatewayConnection         --> *           [trafficGatewayECU]     GatewayECU
+    ECU         [hardware]                      1 <-- FirmwareExecution         --> 0..1        [firmware]              Firmware
+        user info: "Every ECU can have (up to one) firmware running on it."
+    ECU		[firmwareTarget]                1 <-- FirmwareUpdate            --> 0..1        [firmwareUpdater]       FirmwareUpdaterService
+        user info: "Every ECU can have a firmware updater UDS service responsible for handling the firmware updates."
+    ECU 	[hardwarePlatform]              0..1 <-- SensorsOrActuators     --> *           [sensorsOrActuators]    SensorOrActuator
+        user info: "An ECU can be connected with physical machines such as actuators and/or sensors."
+    VehicleNetwork      [fwUpdaterNetworks]     0..1 <-- FwUpdaterServices      --> *           [networkFwUpdater]      FirmwareUpdaterService
+        user info: "A FirmwareUpdaterService can be connected to a vehicle network for accepting incoming connections."
+}

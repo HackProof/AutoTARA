@@ -1,0 +1,6 @@
+mal-toolbox
+mal-simulator
+graphviz
+fastapi
+uvicorn
+python-multipart

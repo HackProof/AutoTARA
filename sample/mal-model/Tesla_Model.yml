@@ -1,0 +1,358 @@
+{
+    "metadata": {
+        "name": "Tesla_Model",
+        "langVersion": "2.0.1",
+        "langID": "org.mal-lang.vehicleLang",
+        "malVersion": "0.1.0-SNAPSHOT",
+        "MAL-Toolbox Version": "2.8.1",
+        "info": "Created by the mal-toolbox model python module."
+    },
+    "assets": {
+        "7": {
+            "name": "Gateway_Firmware",
+            "type": "Firmware",
+            "associated_assets": {
+                "hardware": {
+                    "28": "GatewayECU"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2607.0,
+                    "y": -1227.0
+                }
+            }
+        },
+        "8": {
+            "name": "FirmwareUpdaterService",
+            "type": "FirmwareUpdaterService",
+            "associated_assets": {
+                "firmwareTarget": {
+                    "28": "GatewayECU"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2586.0,
+                    "y": -516.0
+                }
+            }
+        },
+        "12": {
+            "name": "ESP/ABS_Controller",
+            "type": "ECU",
+            "associated_assets": {
+                "sensorsOrActuators": {
+                    "13": "IC_Display"
+                },
+                "vehiclenetworks": {
+                    "27": "CH-CAN"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1515.0,
+                    "y": -924.0
+                }
+            }
+        },
+        "13": {
+            "name": "IC_Display",
+            "type": "SensorOrActuator",
+            "associated_assets": {
+                "hardwarePlatform": {
+                    "12": "ESP/ABS_Controller"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1066.5,
+                    "y": -1039.5
+                }
+            }
+        },
+        "17": {
+            "name": "Linux_2.6.36",
+            "type": "OperatingSystem",
+            "associated_assets": {
+                "appExecutedApps": {
+                    "42": "QtCarBrowser"
+                },
+                "assignedVehicularIdentity": {
+                    "44": "Superuser"
+                },
+                "vulnerabilities": {
+                    "49": "Linux_vulnerability"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3616.5,
+                    "y": -952.5
+                }
+            }
+        },
+        "25": {
+            "name": "BDY-CAN",
+            "type": "CANNetwork",
+            "associated_assets": {
+                "trafficGatewayECU": {
+                    "28": "GatewayECU"
+                },
+                "networkECUs": {
+                    "29": "Body-control_ECUs"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2056.5,
+                    "y": -1405.5
+                }
+            }
+        },
+        "26": {
+            "name": "PT-CAN",
+            "type": "CANNetwork",
+            "associated_assets": {
+                "trafficGatewayECU": {
+                    "28": "GatewayECU"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2073.0,
+                    "y": -1251.0
+                }
+            }
+        },
+        "27": {
+            "name": "CH-CAN",
+            "type": "CANNetwork",
+            "associated_assets": {
+                "networkECUs": {
+                    "12": "ESP/ABS_Controller",
+                    "37": "Instrument_Cluster",
+                    "34": "EBP / EPBM"
+                },
+                "trafficGatewayECU": {
+                    "28": "GatewayECU"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2073.0,
+                    "y": -1050.0
+                }
+            }
+        },
+        "28": {
+            "name": "GatewayECU",
+            "type": "GatewayECU",
+            "associated_assets": {
+                "firmware": {
+                    "7": "Gateway_Firmware"
+                },
+                "firmwareUpdater": {
+                    "8": "FirmwareUpdaterService"
+                },
+                "trafficVNetworks": {
+                    "25": "BDY-CAN",
+                    "27": "CH-CAN",
+                    "26": "PT-CAN"
+                },
+                "connectPrivileges": {
+                    "44": "Superuser"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2599.5,
+                    "y": -931.5
+                }
+            }
+        },
+        "29": {
+            "name": "Body-control_ECUs",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "25": "BDY-CAN"
+                },
+                "sensorsOrActuators": {
+                    "32": "trunk",
+                    "33": "wiper",
+                    "31": "mirror"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1566.0,
+                    "y": -1402.5
+                }
+            }
+        },
+        "31": {
+            "name": "mirror",
+            "type": "SensorOrActuator",
+            "associated_assets": {
+                "hardwarePlatform": {
+                    "29": "Body-control_ECUs"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1119.0,
+                    "y": -1558.5
+                }
+            }
+        },
+        "32": {
+            "name": "trunk",
+            "type": "SensorOrActuator",
+            "associated_assets": {
+                "hardwarePlatform": {
+                    "29": "Body-control_ECUs"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1107.0,
+                    "y": -1413.0
+                }
+            }
+        },
+        "33": {
+            "name": "wiper",
+            "type": "SensorOrActuator",
+            "associated_assets": {
+                "hardwarePlatform": {
+                    "29": "Body-control_ECUs"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1107.0,
+                    "y": -1285.5
+                }
+            }
+        },
+        "34": {
+            "name": "EBP / EPBM",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "27": "CH-CAN"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -1516.5,
+                    "y": -1113.0
+                }
+            }
+        },
+        "37": {
+            "name": "Instrument_Cluster",
+            "type": "ECU",
+            "associated_assets": {
+                "vehiclenetworks": {
+                    "27": "CH-CAN"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -2065.5,
+                    "y": -817.5
+                }
+            }
+        },
+        "42": {
+            "name": "QtCarBrowser",
+            "type": "Application",
+            "associated_assets": {
+                "hostApp": {
+                    "17": "Linux_2.6.36"
+                },
+                "vulnerabilities": {
+                    "48": "QtWebKit_2.2.x"
+                },
+                "hostHardware": {
+                    "45": "Center_Information_Display"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3615.0,
+                    "y": -721.5
+                }
+            }
+        },
+        "44": {
+            "name": "Superuser",
+            "type": "VehicularIdentity",
+            "associated_assets": {
+                "assignedApplications": {
+                    "17": "Linux_2.6.36"
+                },
+                "connectMachines": {
+                    "28": "GatewayECU",
+                    "45": "Center_Information_Display"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3144.0,
+                    "y": -951.0
+                }
+            }
+        },
+        "45": {
+            "name": "Center_Information_Display",
+            "type": "InfotainmentSystem",
+            "associated_assets": {
+                "connectPrivileges": {
+                    "44": "Superuser"
+                },
+                "sysExecutedApps": {
+                    "42": "QtCarBrowser"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3129.0,
+                    "y": -729.0
+                }
+            }
+        },
+        "48": {
+            "name": "QtWebKit_2.2.x",
+            "type": "SoftwareVulnerability",
+            "associated_assets": {
+                "application": {
+                    "42": "QtCarBrowser"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3585.0,
+                    "y": -460.5
+                }
+            }
+        },
+        "49": {
+            "name": "Linux_vulnerability",
+            "type": "SoftwareVulnerability",
+            "associated_assets": {
+                "application": {
+                    "17": "Linux_2.6.36"
+                }
+            },
+            "extras": {
+                "position": {
+                    "x": -3625.5,
+                    "y": -1204.5
+                }
+            }
+        }
+    }
+}

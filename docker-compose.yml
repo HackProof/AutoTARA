@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:17
+    container_name: tara_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: passwd2026
+      POSTGRES_DB: tara_db
+      TZ: Asia/Seoul
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d
+      - ./db/data:/data:ro
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mal-simulator:
+    build:
+      context: ./mal-simulator.server
+    container_name: mal_simulator_server
+    restart: always
+    environment:
+      MALSIM_WORK_DIR: /tmp/autotara/mal-simulator
+    ports:
+      - "${MALSIM_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tara-server:
+    build: ./tara.server
+    container_name: tara_backend
+    restart: always
+    env_file:
+      - ./tara.server/.env
+    ports:
+      - "${TARA_SERVER_HOST_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: user
+      DB_PASSWORD: passwd2026
+      DB_NAME: tara_db
+      PYTHON_SERVER_URL: http://mal-simulator:8000
+      SIMULATION_TEMP_DIR: /tmp/autotara/tara-server
+    depends_on:
+      db:
+        condition: service_healthy
+      mal-simulator:
+        condition: service_healthy
+
+  tara-vue:
+    build: ./tara.vue
+    container_name: tara_frontend
+    restart: always
+    ports:
+      - "${TARA_VUE_HOST_PORT:-8080}:8080"
+    environment:
+      VITE_API_URL: /api
+      VITE_PROXY_TARGET: http://tara-server:3000
+      VITE_HOST: 0.0.0.0
+      VITE_PORT: 8080
+    depends_on:
+      - tara-server
+
+volumes:
+  pgdata:

@@ -131,6 +131,7 @@ const { simulationResult, malsimResult, entryNode, targetNode } = storeToRefs(tm
 const graph = inject('graph');
 
 const selectedPathIndex = ref(null);
+const highlightedCellIds = ref(new Set());
 
 const activeResultType = computed(() => {
     if (malsimResult.value) return 'malsim';
@@ -179,6 +180,7 @@ const displayedPaths = computed(() => {
     } else if (activeResultType.value === 'default') {
         return simulationResult.value.paths.map(p => ({
             nodes: p.nodes, // ID 리스트
+            edges: p.edges || [],
             cost: p.totalCost
         }));
     }
@@ -224,10 +226,187 @@ const selectedPath = computed(() => {
 });
 
 const selectPath = (index) => {
-    selectedPathIndex.value = selectedPathIndex.value === index ? null : index;
+    selectedPathIndex.value = index;
 };
 
 // 노드 라벨 가져오기 (ID 또는 malsim step 객체)
+const getGraphModel = () => {
+    if (!graph || !graph.value) return null;
+    return toRaw(graph.value);
+};
+
+const getCellById = (model, cellId) => {
+    if (!model || !cellId) return null;
+    return model.getCellById ? model.getCellById(cellId) : model.getCell(cellId);
+};
+
+const getEdgeSourceId = (edge) => edge?.getSourceCellId?.() || edge?.getSource?.()?.cell || '';
+const getEdgeTargetId = (edge) => edge?.getTargetCellId?.() || edge?.getTarget?.()?.cell || '';
+
+const setAttackPathFlag = (model, cellId, enabled) => {
+    const cell = getCellById(model, cellId);
+    if (!cell) return false;
+
+    const data = cell.getData?.() || {};
+    if (Boolean(data.isAttackPath) === enabled) return true;
+
+    cell.setData({ isAttackPath: enabled }, { merge: true, skipSelection: true });
+    dataChanged.updateStyleAttrs(cell);
+    return true;
+};
+
+const clearAttackPathHighlight = (model = getGraphModel(), { scanAll = false } = {}) => {
+    if (!model) return;
+
+    const idsToClear = scanAll
+        ? (model.getCells?.() || [])
+            .filter(cell => cell.getData?.()?.isAttackPath)
+            .map(cell => cell.id)
+        : Array.from(highlightedCellIds.value);
+
+    idsToClear.forEach(cellId => setAttackPathFlag(model, cellId, false));
+    highlightedCellIds.value = new Set();
+};
+
+const markAttackPathCell = (model, cellId) => {
+    if (setAttackPathFlag(model, cellId, true)) {
+        highlightedCellIds.value.add(cellId);
+    }
+};
+
+const normalizeName = (value) => String(value || '').trim().toLowerCase();
+
+const createNodeIdByName = (model) => {
+    const nodeIdByName = new Map();
+
+    (model.getNodes?.() || []).forEach(node => {
+        const data = node.getData?.() || {};
+        [
+            data.name,
+            data.label,
+            data.malInfo?.assetName,
+            data.malInfo?.sourceAssetName
+        ].forEach(value => {
+            const normalized = normalizeName(value);
+            if (normalized && !nodeIdByName.has(normalized)) {
+                nodeIdByName.set(normalized, node.id);
+            }
+        });
+    });
+
+    return nodeIdByName;
+};
+
+const getSelectedPathNodeIds = (model, path) => {
+    if (!path) return [];
+
+    if (activeResultType.value === 'default') {
+        return (path.nodes || []).filter(Boolean);
+    }
+
+    const nodeIdByName = createNodeIdByName(model);
+    return (path.nodes || [])
+        .map(step => nodeIdByName.get(normalizeName(step.assetName || step.name?.split(':')?.[0])) || '')
+        .filter(Boolean);
+};
+
+const getConnectingEdgeIds = (model, nodeIds) => {
+    const edges = model.getEdges?.() || [];
+    const edgeIdsByPair = new Map();
+    const edgeIds = [];
+
+    edges.forEach(edge => {
+        const sourceId = getEdgeSourceId(edge);
+        const targetId = getEdgeTargetId(edge);
+        if (!sourceId || !targetId) return;
+
+        const key = [sourceId, targetId].sort().join('::');
+        if (!edgeIdsByPair.has(key)) {
+            edgeIdsByPair.set(key, []);
+        }
+        edgeIdsByPair.get(key).push(edge.id);
+    });
+
+    for (let index = 0; index < nodeIds.length - 1; index += 1) {
+        const sourceId = nodeIds[index];
+        const targetId = nodeIds[index + 1];
+        if (!sourceId || !targetId || sourceId === targetId) continue;
+
+        const key = [sourceId, targetId].sort().join('::');
+        edgeIds.push(...(edgeIdsByPair.get(key) || []));
+    }
+
+    return edgeIds;
+};
+
+const getSelectedPathEdgeIds = (model, path, nodeIds) => {
+    if (!path) return [];
+    if (Array.isArray(path.edges) && path.edges.length > 0) {
+        return path.edges.filter(Boolean);
+    }
+    return getConnectingEdgeIds(model, nodeIds);
+};
+
+const applySelectedPathHighlight = () => {
+    const model = getGraphModel();
+    if (!model) return;
+
+    if (!selectedPath.value) {
+        clearAttackPathHighlight(model);
+        return;
+    }
+
+    const nodeIds = getSelectedPathNodeIds(model, selectedPath.value);
+    const edgeIds = getSelectedPathEdgeIds(model, selectedPath.value, nodeIds);
+    const nextHighlightedIds = new Set([...nodeIds, ...edgeIds]);
+    const currentHighlightedIds = highlightedCellIds.value;
+
+    currentHighlightedIds.forEach(cellId => {
+        if (!nextHighlightedIds.has(cellId)) {
+            setAttackPathFlag(model, cellId, false);
+        }
+    });
+
+    nextHighlightedIds.forEach(cellId => {
+        if (!currentHighlightedIds.has(cellId)) {
+            markAttackPathCell(model, cellId);
+        }
+    });
+
+    highlightedCellIds.value = nextHighlightedIds;
+};
+
+watch(
+    [simulationResult, malsimResult],
+    () => {
+        selectedPathIndex.value = displayedPaths.value.length ? 0 : null;
+        clearAttackPathHighlight(getGraphModel(), { scanAll: true });
+    },
+    { immediate: true, flush: 'post' }
+);
+
+watch(
+    displayedPaths,
+    (paths) => {
+        if (!paths.length) {
+            selectedPathIndex.value = null;
+            clearAttackPathHighlight();
+            return;
+        }
+
+        if (selectedPathIndex.value === null || selectedPathIndex.value >= paths.length) {
+            selectedPathIndex.value = 0;
+        }
+    },
+    { immediate: true }
+);
+
+watch(
+    [selectedPath, () => graph?.value],
+    () => applySelectedPathHighlight(),
+    { immediate: true, flush: 'post' }
+);
+
 const getNodeLabel = (node) => {
     if (node && node.isMalsimStep) {
         return node.name; // "Asset:step"

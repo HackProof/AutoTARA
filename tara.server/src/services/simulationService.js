@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Simulation Service
  * 
- * malsim을 이용한 공격 시뮬레이션 서비스
- * - 시나리오 YAML 파일 생성
- * - malsim 실행
- * - 로그 파싱 및 결과 반환
+ * malsim???댁슜??怨듦꺽 ?쒕??덉씠???쒕퉬??
+ * - ?쒕굹由ъ삤 YAML ?뚯씪 ?앹꽦
+ * - malsim ?ㅽ뻾
+ * - 濡쒓렇 ?뚯떛 諛?寃곌낵 諛섑솚
  */
 
 const fs = require('fs');
@@ -14,16 +14,16 @@ const { spawn } = require('child_process');
 const yaml = require('js-yaml');
 const { v4: uuid } = require('uuid');
 
-// 임시 파일 저장 디렉토리
+// ?꾩떆 ?뚯씪 ????붾젆?좊━
 const TEMP_DIR = process.env.SIMULATION_TEMP_DIR || path.join(os.tmpdir(), 'autotara', 'tara-server');
 const SIMULATION_DIR = path.join(TEMP_DIR, 'simulations');
 const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || 'http://localhost:8000';
 
-// 업로드된 MAL 파일 저장소 (세션별)
+// ?낅줈?쒕맂 MAL ?뚯씪 ??μ냼 (?몄뀡蹂?
 const uploadedFiles = new Map();
 
 /**
- * 임시 디렉토리 초기화
+ * ?꾩떆 ?붾젆?좊━ 珥덇린??
  */
 function ensureTempDirs() {
     if (!fs.existsSync(TEMP_DIR)) {
@@ -34,13 +34,18 @@ function ensureTempDirs() {
     }
 }
 
+function safeLocalName(fileName, fallback) {
+    const baseName = path.basename(fileName || fallback || '');
+    return baseName && baseName !== '.' && baseName !== '..' ? baseName : fallback;
+}
+
 /**
- * 업로드된 MAL 파일을 임시 저장합니다.
- * @param {Buffer} modelBuffer - MAL 모델 JSON 버퍼
- * @param {Buffer} marBuffer - MAR 파일 버퍼
- * @param {string} modelName - 원본 모델 파일명
- * @param {string} marName - 원본 MAR 파일명
- * @returns {string} 세션 ID
+ * ?낅줈?쒕맂 MAL ?뚯씪???꾩떆 ??ν빀?덈떎.
+ * @param {Buffer} modelBuffer - MAL 紐⑤뜽 JSON 踰꾪띁
+ * @param {Buffer} marBuffer - MAR ?뚯씪 踰꾪띁
+ * @param {string} modelName - ?먮낯 紐⑤뜽 ?뚯씪紐?
+ * @param {string} marName - ?먮낯 MAR ?뚯씪紐?
+ * @returns {string} ?몄뀡 ID
  */
 function saveUploadedFiles(modelBuffer, marBuffer, modelName, marName) {
     ensureTempDirs();
@@ -55,7 +60,7 @@ function saveUploadedFiles(modelBuffer, marBuffer, modelName, marName) {
     fs.writeFileSync(modelPath, modelBuffer);
     fs.writeFileSync(marPath, marBuffer);
 
-    // 메모리에도 경로 저장
+    // 硫붾え由ъ뿉??寃쎈줈 ???
     uploadedFiles.set(sessionId, {
         modelPath,
         marPath,
@@ -70,8 +75,8 @@ function saveUploadedFiles(modelBuffer, marBuffer, modelName, marName) {
 }
 
 /**
- * 세션 ID로 저장된 파일 경로를 조회합니다.
- * @param {string} sessionId - 세션 ID
+ * ?몄뀡 ID濡???λ맂 ?뚯씪 寃쎈줈瑜?議고쉶?⑸땲??
+ * @param {string} sessionId - ?몄뀡 ID
  * @returns {Object|null} { modelPath, marPath }
  */
 function getUploadedFiles(sessionId) {
@@ -79,12 +84,12 @@ function getUploadedFiles(sessionId) {
 }
 
 /**
- * 시나리오 YAML 파일을 생성합니다.
- * @param {Object} config - 시나리오 설정
- * @param {string} config.sessionId - 세션 ID
- * @param {string} config.entryPoint - 진입점 (예: "AssetName:attackStep")
- * @param {string} config.goal - 목표 (예: "AssetName:attackStep")
- * @param {string} config.attackerName - 공격자 이름 (선택적)
+ * ?쒕굹由ъ삤 YAML ?뚯씪???앹꽦?⑸땲??
+ * @param {Object} config - ?쒕굹由ъ삤 ?ㅼ젙
+ * @param {string} config.sessionId - ?몄뀡 ID
+ * @param {string} config.entryPoint - 吏꾩엯??(?? "AssetName:attackStep")
+ * @param {string} config.goal - 紐⑺몴 (?? "AssetName:attackStep")
+ * @param {string} config.attackerName - 怨듦꺽???대쫫 (?좏깮??
  * @returns {Object} { scenarioPath, simulationId }
  */
 function generateScenarioYaml(config) {
@@ -99,7 +104,7 @@ function generateScenarioYaml(config) {
     const simDir = path.join(SIMULATION_DIR, simulationId);
     fs.mkdirSync(simDir, { recursive: true });
 
-    // 시나리오 YAML 구성
+    // ?쒕굹由ъ삤 YAML 援ъ꽦
     const scenario = {
         lang_file: files.marName,
         model_file: files.modelName,
@@ -117,7 +122,7 @@ function generateScenarioYaml(config) {
     const yamlContent = yaml.dump(scenario, { indent: 2 });
     fs.writeFileSync(scenarioPath, yamlContent);
 
-    // 파일들도 복사
+    // ?뚯씪?ㅻ룄 蹂듭궗
     fs.copyFileSync(files.modelPath, path.join(simDir, files.modelName));
     fs.copyFileSync(files.marPath, path.join(simDir, files.marName));
 
@@ -131,10 +136,10 @@ function generateScenarioYaml(config) {
 }
 
 /**
- * malsim을 실행합니다.
- * @param {string} simDir - 시뮬레이션 디렉토리
- * @param {string} scenarioPath - 시나리오 파일 경로
- * @returns {Promise<Object>} 실행 결과
+ * malsim???ㅽ뻾?⑸땲??
+ * @param {string} simDir - ?쒕??덉씠???붾젆?좊━
+ * @param {string} scenarioPath - ?쒕굹由ъ삤 ?뚯씪 寃쎈줈
+ * @returns {Promise<Object>} ?ㅽ뻾 寃곌낵
  */
 async function runMalsim(simDir, scenarioPath) {
     return new Promise((resolve, reject) => {
@@ -145,7 +150,7 @@ async function runMalsim(simDir, scenarioPath) {
             fs.mkdirSync(logsDir, { recursive: true });
         }
 
-        // malsim 실행 (Python subprocess)
+        // malsim ?ㅽ뻾 (Python subprocess)
         const malsimProcess = spawn('python', [
             '-m', 'malsim',
             '-s', scenarioPath,
@@ -175,7 +180,7 @@ async function runMalsim(simDir, scenarioPath) {
                     stderr
                 });
             } else {
-                // malsim이 없거나 실패한 경우에도 결과 반환
+                // malsim???녾굅???ㅽ뙣??寃쎌슦?먮룄 寃곌낵 諛섑솚
                 resolve({
                     success: false,
                     logPath,
@@ -198,9 +203,9 @@ async function runMalsim(simDir, scenarioPath) {
 }
 
 /**
- * malsim 로그를 파싱하여 공격 경로를 추출합니다.
- * @param {string} logPath - 로그 파일 경로
- * @returns {Object} 파싱된 결과
+ * malsim 濡쒓렇瑜??뚯떛?섏뿬 怨듦꺽 寃쎈줈瑜?異붿텧?⑸땲??
+ * @param {string} logPath - 濡쒓렇 ?뚯씪 寃쎈줈
+ * @returns {Object} ?뚯떛??寃곌낵
  */
 function parseSimulationLog(logPath) {
     if (!fs.existsSync(logPath)) {
@@ -219,15 +224,15 @@ function parseSimulationLog(logPath) {
     let stepNumber = 0;
 
     for (const line of lines) {
-        // 공격자가 compromise한 단계 추출
-        // 형식: "Attacker agent "XXX" compromised "AssetName:attackStep" (reward: 0)."
+        // 怨듦꺽?먭? compromise???④퀎 異붿텧
+        // ?뺤떇: "Attacker agent "XXX" compromised "AssetName:attackStep" (reward: 0)."
         const compromiseMatch = line.match(/Attacker agent "([^"]+)" compromised "([^"]+):([^"]+)"/);
 
         if (compromiseMatch) {
             const [, attackerName, assetName, attackStep] = compromiseMatch;
             const fullStep = `${assetName}:${attackStep}`;
 
-            // 중복 방지
+            // 以묐났 諛⑹?
             if (!compromisedSteps.has(fullStep)) {
                 compromisedSteps.add(fullStep);
                 stepNumber++;
@@ -251,19 +256,19 @@ function parseSimulationLog(logPath) {
 }
 
 /**
- * 전체 시뮬레이션을 실행합니다.
- * Python 시뮬레이션 서버로 파일을 전송합니다.
+ * ?꾩껜 ?쒕??덉씠?섏쓣 ?ㅽ뻾?⑸땲??
+ * Python ?쒕??덉씠???쒕쾭濡??뚯씪???꾩넚?⑸땲??
  * 
- * @param {Object} config - 시뮬레이션 설정
- * @param {Object} config.model - MAL 모델 JSON 객체
- * @param {Object} config.langspec - MAL 언어 스펙 JSON 객체
- * @param {string} config.entryPoint - 진입점
- * @param {string} config.goal - 목표
- * @param {string} config.langFileName - 언어 파일명
- * @param {string} config.modelFileName - 모델 파일명
- * @param {number} config.seed - 시뮬레이션 시드값
- * @param {number} config.ttcMode - TTC 모드
- * @returns {Promise<Object>} 시뮬레이션 응답 (session_id 포함)
+ * @param {Object} config - ?쒕??덉씠???ㅼ젙
+ * @param {Object} config.model - MAL 紐⑤뜽 JSON 媛앹껜
+ * @param {Object} config.langspec - MAL ?몄뼱 ?ㅽ럺 JSON 媛앹껜
+ * @param {string} config.entryPoint - 吏꾩엯??
+ * @param {string} config.goal - 紐⑺몴
+ * @param {string} config.langFileName - ?몄뼱 ?뚯씪紐?
+ * @param {string} config.modelFileName - 紐⑤뜽 ?뚯씪紐?
+ * @param {number} config.seed - ?쒕??덉씠???쒕뱶媛?
+ * @param {number} config.ttcMode - TTC 紐⑤뱶
+ * @returns {Promise<Object>} ?쒕??덉씠???묐떟 (session_id ?ы븿)
  */
 async function runSimulation(config) {
     const FormData = require('form-data');
@@ -272,10 +277,12 @@ async function runSimulation(config) {
     try {
         const {
             marFileBuffer,
+            langGraphFileBuffer,
             modelFileBuffer,
             entryPoint,
             goal,
             langFileName = 'language.mar',
+            langGraphFileName = 'langGraph.json',
             modelFileName = 'model.json',
             seed = 42,
             ttcMode = 0
@@ -283,55 +290,53 @@ async function runSimulation(config) {
 
         ensureTempDirs();
 
-        // 임시 디렉토리 생성
+        // ?꾩떆 ?붾젆?좊━ ?앹꽦
         const sessionId = uuid();
         const sessionDir = path.join(TEMP_DIR, sessionId);
         fs.mkdirSync(sessionDir, { recursive: true });
 
-        // 1. scenario.yml 생성
-        const scenarioYaml = createScenario(entryPoint, goal, langFileName, modelFileName);
-        const scenarioPath = path.join(sessionDir, 'scenario.yml');
-        fs.writeFileSync(scenarioPath, scenarioYaml, 'utf8');
-
-        console.log(`[SimulationService] Scenario created: ${scenarioPath}`);
-        console.log(`[SimulationService] Scenario content:\n${scenarioYaml}`);
-
-        // 2. model.json 저장
+        // 1. scenario.yml ?앹꽦
+        // 2. model.json ???
         if (!modelFileBuffer) {
             throw new Error('Model file buffer is required');
         }
-        const modelPath = path.join(sessionDir, modelFileName);
+        const safeModelFileName = safeLocalName(modelFileName, 'model.json');
+        const modelPath = path.join(sessionDir, safeModelFileName);
         fs.writeFileSync(modelPath, modelFileBuffer);
         console.log(`[SimulationService] Model saved: ${modelPath}`);
 
-        // 3. langspec.mar 저장 (바이너리)
-        if (!marFileBuffer) {
-            throw new Error('MAR file buffer is required');
+        // 3. langspec.mar ???(諛붿씠?덈━)
+        const languageBuffer = langGraphFileBuffer || marFileBuffer;
+        const languageFileName = langGraphFileBuffer ? langGraphFileName : langFileName;
+        if (!languageBuffer) {
+            throw new Error('MAL LangGraph file buffer is required');
         }
-        const langPath = path.join(sessionDir, langFileName);
-        fs.writeFileSync(langPath, marFileBuffer); // 바이너리 저장
-        console.log(`[SimulationService] MAR saved: ${langPath}`);
+        const safeLanguageFileName = safeLocalName(
+            languageFileName,
+            langGraphFileBuffer ? 'langGraph.json' : 'language.mar'
+        );
+        const langPath = path.join(sessionDir, safeLanguageFileName);
+        fs.writeFileSync(langPath, languageBuffer);
+        console.log(`[SimulationService] Language saved: ${langPath}`);
 
-        // 4. Python 서버로 파일 전송 (multipart/form-data)
+        // 4. Python ?쒕쾭濡??뚯씪 ?꾩넚 (multipart/form-data)
         const formData = new FormData();
-        formData.append('scenario_file', fs.createReadStream(scenarioPath), {
-            filename: 'scenario.yml',
-            contentType: 'application/x-yaml'
-        });
-        formData.append('lang_file', fs.createReadStream(langPath), {
-            filename: langFileName,
-            contentType: 'application/octet-stream'
-        });
+        formData.append('entryPoint', entryPoint);
+        formData.append('goal', goal);
         formData.append('model_file', fs.createReadStream(modelPath), {
-            filename: modelFileName,
+            filename: safeModelFileName,
             contentType: 'application/json'
+        });
+        formData.append(langGraphFileBuffer ? 'lang_graph_file' : 'lang_file', fs.createReadStream(langPath), {
+            filename: safeLanguageFileName,
+            contentType: langGraphFileBuffer ? 'application/json' : 'application/octet-stream'
         });
         formData.append('seed', seed.toString());
         formData.append('ttc_mode', ttcMode.toString());
 
         console.log(`[SimulationService] Sending files to Python server...`);
 
-        // Python 서버로 요청
+        // Python ?쒕쾭濡??붿껌
         const response = await axios.post(
             `${PYTHON_SERVER_URL}/simulation/run-file`,
             formData,
@@ -339,26 +344,27 @@ async function runSimulation(config) {
                 headers: {
                     ...formData.getHeaders()
                 },
-                timeout: 30000 // 30초 타임아웃
+                timeout: 30000 // 30珥???꾩븘??
             }
         );
 
         console.log(`[SimulationService] Response from Python server:`, response.data);
 
-        // 로컬 세션 정보 저장
-        uploadedFiles.set(sessionId, {
+        // 濡쒖뺄 ?몄뀡 ?뺣낫 ???
+        const uploadedFileRecord = {
             pythonSessionId: response.data.session_id,
-            scenarioPath,
             modelPath,
             langPath,
             entryPoint,
             goal,
             createdAt: new Date()
-        });
+        };
+        uploadedFiles.set(sessionId, uploadedFileRecord);
+        uploadedFiles.set(response.data.session_id, uploadedFileRecord);
 
         return {
             success: true,
-            sessionId: response.data.session_id, // Python 서버의 session_id 반환
+            sessionId: response.data.session_id, // Python ?쒕쾭??session_id 諛섑솚
             status: response.data.status,
             message: response.data.message,
             createdAt: response.data.created_at
@@ -368,21 +374,21 @@ async function runSimulation(config) {
         console.error('[SimulationService] Simulation error:', error.message);
 
         if (error.response) {
-            // Python 서버가 응답했지만 에러 상태 코드를 반환한 경우
+            // Python ?쒕쾭媛 ?묐떟?덉?留??먮윭 ?곹깭 肄붾뱶瑜?諛섑솚??寃쎌슦
             console.error('[SimulationService] Python server error:', error.response.data);
             return {
                 success: false,
                 error: error.response.data.detail || error.response.data.message || error.message
             };
         } else if (error.request) {
-            // 요청이 전송되었지만 응답을 받지 못한 경우
+            // ?붿껌???꾩넚?섏뿀吏留??묐떟??諛쏆? 紐삵븳 寃쎌슦
             console.error('[SimulationService] No response from Python server');
             return {
                 success: false,
                 error: `Python simulation server is not responding. Please check if the server is running at ${PYTHON_SERVER_URL}`
             };
         } else {
-            // 요청 설정 중 문제가 발생한 경우
+            // ?붿껌 ?ㅼ젙 以?臾몄젣媛 諛쒖깮??寃쎌슦
             return {
                 success: false,
                 error: error.message
@@ -392,28 +398,43 @@ async function runSimulation(config) {
 }
 
 /**
- * 세션 파일을 정리합니다 (선택적)
- * @param {string} sessionId - 세션 ID
+ * ?몄뀡 ?뚯씪???뺣━?⑸땲??(?좏깮??
+ * @param {string} sessionId - ?몄뀡 ID
  */
-function cleanupSession(sessionId) {
+async function cleanupSession(sessionId) {
+    const axios = require('axios');
+
     const files = uploadedFiles.get(sessionId);
     if (files) {
         const sessionDir = path.dirname(files.modelPath);
         if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true });
         }
-        uploadedFiles.delete(sessionId);
+        for (const [key, value] of uploadedFiles.entries()) {
+            if (value === files) {
+                uploadedFiles.delete(key);
+            }
+        }
         console.log(`[SimulationService] Session ${sessionId} cleaned up`);
+    }
+
+    try {
+        await axios.delete(`${PYTHON_SERVER_URL}/simulation/${sessionId}`, { timeout: 10000 });
+    } catch (error) {
+        if (error.response && error.response.status === 404) {
+            return;
+        }
+        throw error;
     }
 }
 
 /**
- * scenario.yml 파일 내용을 생성합니다.
- * @param {string} entryPoint - 진입점 (예: "AssetName:attackStep")
- * @param {string} goal - 목표 (예: "AssetName:attackStep")
- * @param {string} langFileName - MAR 파일명 (예: "org.mal-lang.vehicleLang-2.0.1.mar")
- * @param {string} modelFileName - 모델 파일명 (예: "basic_vehicle_model.json")
- * @returns {string} YAML 형식의 scenario 내용
+ * scenario.yml ?뚯씪 ?댁슜???앹꽦?⑸땲??
+ * @param {string} entryPoint - 吏꾩엯??(?? "AssetName:attackStep")
+ * @param {string} goal - 紐⑺몴 (?? "AssetName:attackStep")
+ * @param {string} langFileName - MAR ?뚯씪紐?(?? "org.mal-lang.vehicleLang-2.0.1.mar")
+ * @param {string} modelFileName - 紐⑤뜽 ?뚯씪紐?(?? "basic_vehicle_model.json")
+ * @returns {string} YAML ?뺤떇??scenario ?댁슜
  */
 function createScenario(entryPoint, goal, langFileName, modelFileName) {
     const scenario = {
@@ -433,15 +454,15 @@ function createScenario(entryPoint, goal, langFileName, modelFileName) {
         }
     };
 
-    // YAML 형식으로 변환
+    // YAML ?뺤떇?쇰줈 蹂??
     const yamlContent = yaml.dump(scenario, { indent: 2 });
     return yamlContent;
 }
 
 /**
- * Python 서버에서 시뮬레이션 상태를 조회합니다.
- * @param {string} sessionId - Python 서버의 세션 ID
- * @returns {Promise<Object>} 상태 정보
+ * Python ?쒕쾭?먯꽌 ?쒕??덉씠???곹깭瑜?議고쉶?⑸땲??
+ * @param {string} sessionId - Python ?쒕쾭???몄뀡 ID
+ * @returns {Promise<Object>} ?곹깭 ?뺣낫
  */
 async function getSimulationStatus(sessionId) {
     const axios = require('axios');
@@ -483,16 +504,22 @@ function buildResultView(data, view) {
     return {
         ...data,
         result: {
-            shortest_paths: result.shortest_paths || null
+            attack_path_found: result.attack_path_found || false,
+            attack_paths: result.attack_paths || {},
+            attack_paths_count: result.attack_paths_count || {},
+            shortest_paths: result.shortest_paths || null,
+            attack_graph: result.attack_graph || null,
+            attack_path: result.attack_path || null,
+            artifacts: result.artifacts || {}
         }
     };
 }
 
 /**
- * Python 서버에서 시뮬레이션 결과를 조회합니다.
- * @param {string} sessionId - Python 서버의 세션 ID
- * @param {string} [view] - 결과 뷰 타입 (예: "shortest")
- * @returns {Promise<Object>} 결과 정보
+ * Python ?쒕쾭?먯꽌 ?쒕??덉씠??寃곌낵瑜?議고쉶?⑸땲??
+ * @param {string} sessionId - Python ?쒕쾭???몄뀡 ID
+ * @param {string} [view] - 寃곌낵 酉????(?? "shortest")
+ * @returns {Promise<Object>} 寃곌낵 ?뺣낫
  */
 async function getSimulationResult(sessionId, view) {
     const axios = require('axios');
@@ -524,6 +551,40 @@ async function getSimulationResult(sessionId, view) {
     }
 }
 
+async function getSimulationArtifact(sessionId, artifactName) {
+    const axios = require('axios');
+
+    try {
+        const response = await axios.get(
+            `${PYTHON_SERVER_URL}/simulation/${sessionId}/artifacts/${encodeURIComponent(artifactName)}`,
+            {
+                timeout: 30000,
+                responseType: 'stream'
+            }
+        );
+
+        return {
+            success: true,
+            stream: response.data,
+            contentType: response.headers['content-type'],
+            contentDisposition: response.headers['content-disposition']
+        };
+    } catch (error) {
+        if (error.response) {
+            return {
+                success: false,
+                statusCode: error.response.status,
+                error: error.response.data?.detail || error.response.data?.message || 'Failed to get artifact'
+            };
+        }
+
+        return {
+            success: false,
+            error: 'Python simulation server is not responding'
+        };
+    }
+}
+
 module.exports = {
     saveUploadedFiles,
     getUploadedFiles,
@@ -534,5 +595,6 @@ module.exports = {
     cleanupSession,
     createScenario,
     getSimulationStatus,
-    getSimulationResult
+    getSimulationResult,
+    getSimulationArtifact
 };

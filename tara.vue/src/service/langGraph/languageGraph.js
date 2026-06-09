@@ -27,6 +27,7 @@ const getTtcValue = (ttc) => {
 const normalizeAssociation = (fieldName, association = {}) => ({
     fieldName,
     name: association.name || fieldName,
+    info: association.info || {},
     description: getInfoText(association.info) || association.description || '',
     left: association.left || null,
     right: association.right || null
@@ -49,8 +50,15 @@ const normalizeAttackStep = (stepName, step = {}, assetName) => ({
     type: step.type || '',
     asset: step.asset || assetName,
     ttc: step.ttc || null,
+    info: step.info || {},
     description: getInfoText(step.info) || step.description || '',
-    tags: step.tags || []
+    tags: step.tags || [],
+    own_children: step.own_children || step.ownChildren || {},
+    own_parents: step.own_parents || step.ownParents || {},
+    overrides: step.overrides === true,
+    inherits: step.inherits || null,
+    requires: step.requires || [],
+    detectors: step.detectors || {}
 });
 
 const normalizeAttackSteps = (attackSteps = {}, assetName) => {
@@ -74,10 +82,12 @@ const normalizeAsset = (assetName, asset = {}) => {
 
     return {
         name: asset.name || assetName,
+        info: asset.info || {},
         description: getInfoText(asset.info) || asset.description || '',
         isAbstract: asset.is_abstract === true || asset.isAbstract === true,
         superAsset: asset.super_asset || asset.superAsset || '',
         subAssets: asset.sub_assets || asset.subAssets || [],
+        variables: asset.variables || {},
         dfdShape: asset.dfdShape || 'process',
         associations,
         attackSteps
@@ -140,6 +150,92 @@ export const normalizeLanguageGraph = (languageGraph, fileName = '') => {
         metadata: languageGraph.metadata || {},
         assets
     };
+};
+
+const isSerializedLanguageGraph = (languageGraph) => {
+    if (!languageGraph || typeof languageGraph !== 'object') return false;
+    if (Array.isArray(languageGraph.assets)) return false;
+    return Object.values(languageGraph).some((value) =>
+        value
+        && typeof value === 'object'
+        && (value.attack_steps || value.attackSteps || value.associations)
+    );
+};
+
+const infoFromDescription = (description) => (
+    description ? { user: description } : {}
+);
+
+const normalizeSerializedAssociationField = (field = {}) => ({
+    asset: field.asset || '',
+    fieldname: field.fieldname || field.fieldName || field.name || '',
+    min: Number.isFinite(Number(field.min ?? field.minimum)) ? Number(field.min ?? field.minimum) : 0,
+    max: Number.isFinite(Number(field.max ?? field.maximum)) ? Number(field.max ?? field.maximum) : 1
+});
+
+const serializeAssociationForMalsim = (association) => {
+    if (!association?.left?.asset || !association?.right?.asset) return null;
+    return {
+        name: association.name || association.fieldName || association.fieldname || '',
+        info: association.info || infoFromDescription(association.description),
+        left: normalizeSerializedAssociationField(association.left),
+        right: normalizeSerializedAssociationField(association.right)
+    };
+};
+
+const serializeAttackStepForMalsim = (step, assetName) => {
+    const stepName = step.name || step.attackStep || '';
+    if (!stepName) return null;
+    return {
+        name: stepName,
+        type: step.type || 'or',
+        asset: step.asset || assetName,
+        ttc: step.ttc || {},
+        own_children: step.own_children || step.ownChildren || {},
+        own_parents: step.own_parents || step.ownParents || {},
+        info: step.info || infoFromDescription(step.description),
+        overrides: step.overrides === true,
+        inherits: step.inherits || null,
+        tags: step.tags || [],
+        detectors: step.detectors || {}
+    };
+};
+
+export const createLanguageGraphSourceForMalsim = (languageGraph) => {
+    if (!languageGraph) return null;
+    if (isSerializedLanguageGraph(languageGraph)) return languageGraph;
+
+    const normalized = normalizeLanguageGraph(languageGraph, languageGraph.fileName || '');
+    if (!normalized.assets.length) return null;
+
+    return normalized.assets.reduce((serialized, asset) => {
+        const associations = {};
+        (asset.associations || []).forEach((association) => {
+            const serializedAssociation = serializeAssociationForMalsim(association);
+            if (!serializedAssociation?.left?.fieldname || !serializedAssociation?.right?.fieldname) return;
+            associations[association.fieldName || association.fieldname || serializedAssociation.name] = serializedAssociation;
+        });
+
+        const attackSteps = {};
+        (asset.attackSteps || []).forEach((step) => {
+            const serializedStep = serializeAttackStepForMalsim(step, asset.name);
+            if (!serializedStep) return;
+            attackSteps[serializedStep.name] = serializedStep;
+        });
+
+        serialized[asset.name] = {
+            name: asset.name,
+            associations,
+            attack_steps: attackSteps,
+            info: asset.info || infoFromDescription(asset.description),
+            super_asset: asset.superAsset || '',
+            sub_assets: asset.subAssets || [],
+            variables: asset.variables || {},
+            is_abstract: asset.isAbstract === true
+        };
+
+        return serialized;
+    }, { metadata: normalized.metadata || {} });
 };
 
 export const getConcreteAssets = (languageGraph) => {
@@ -383,7 +479,8 @@ export const createEmptyThreatModelFromLanguageGraph = (form, languageGraph, fil
         cells: []
     },
     threatCounter: 0,
-    languageGraph: languageGraph ? normalizeLanguageGraph(languageGraph, fileName) : null
+    languageGraph: languageGraph ? normalizeLanguageGraph(languageGraph, fileName) : null,
+    languageGraphSource: languageGraph || null
 });
 
 export default {
@@ -401,5 +498,6 @@ export default {
     hasAssociationBetween,
     isAssetTypeAssignableTo,
     applyAssociationToEdge,
-    createEmptyThreatModelFromLanguageGraph
+    createEmptyThreatModelFromLanguageGraph,
+    createLanguageGraphSourceForMalsim
 };

@@ -3,6 +3,7 @@ import { ports } from '@/service/x6/ports.js';
 import defaultProperties from '@/service/entity/default-properties.js';
 import {
     createLangGraphAssetData,
+    findAssociationsFromField,
     findAssociationMatches,
     findAssociationsBetween,
     getConcreteAssets
@@ -48,15 +49,7 @@ const getTargetCellId = (edge) => {
     return edge.target?.cell;
 };
 
-const getAssetId = (cell, usedIds, fallbackIndex) => {
-    const data = getCellData(cell);
-    const existingId = data.malInfo?.assetId;
-
-    if (existingId != null && existingId !== '' && !usedIds.has(String(existingId))) {
-        usedIds.add(String(existingId));
-        return String(existingId);
-    }
-
+const getAssetId = (usedIds, fallbackIndex) => {
     let nextId = String(fallbackIndex);
     while (usedIds.has(nextId)) {
         fallbackIndex += 1;
@@ -65,6 +58,25 @@ const getAssetId = (cell, usedIds, fallbackIndex) => {
 
     usedIds.add(nextId);
     return nextId;
+};
+
+const getAssociationFieldMax = (languageGraph, ownerAssetType, associatedAssetType, fieldName) => {
+    const association = findAssociationsFromField(
+        languageGraph,
+        ownerAssetType,
+        associatedAssetType,
+        fieldName
+    )[0];
+
+    if (!association) return null;
+
+    const field = association.left?.fieldname === fieldName
+        ? association.left
+        : association.right?.fieldname === fieldName
+            ? association.right
+            : null;
+    const max = Number(field?.max ?? field?.maximum);
+    return Number.isFinite(max) && max > 0 ? max : Infinity;
 };
 
 const getModelMetadata = (threatModel) => {
@@ -84,6 +96,7 @@ const getModelMetadata = (threatModel) => {
 export const createMalModelFromDiagram = (threatModel, diagramOrGraph) => {
     const nodes = getNodeCells(diagramOrGraph);
     const edges = getEdgeCells(diagramOrGraph);
+    const languageGraph = threatModel.languageGraph || null;
     const usedAssetIds = new Set();
     const cellIdToAssetId = new Map();
     const assets = {};
@@ -93,7 +106,7 @@ export const createMalModelFromDiagram = (threatModel, diagramOrGraph) => {
         const assetType = data.malInfo?.assetType;
         if (!assetType) return;
 
-        const assetId = getAssetId(cell, usedAssetIds, index + 1);
+        const assetId = getAssetId(usedAssetIds, index);
         const position = getPosition(cell);
 
         cellIdToAssetId.set(getCellId(cell), assetId);
@@ -129,6 +142,21 @@ export const createMalModelFromDiagram = (threatModel, diagramOrGraph) => {
 
         if (!assets[ownerId].associated_assets[fieldName]) {
             assets[ownerId].associated_assets[fieldName] = {};
+        }
+
+        const fieldMax = getAssociationFieldMax(
+            languageGraph,
+            assets[ownerId].type,
+            assets[associatedId].type,
+            fieldName
+        );
+        if (fieldMax === null) {
+            console.warn(`[modelTransform] Skipping invalid association field: ${assets[ownerId].type}.${fieldName} -> ${assets[associatedId].type}`);
+            return;
+        }
+        if (Object.keys(assets[ownerId].associated_assets[fieldName]).length >= fieldMax) {
+            console.warn(`[modelTransform] Skipping association over max cardinality: ${assets[ownerId].name}.${fieldName}`);
+            return;
         }
 
         assets[ownerId].associated_assets[fieldName][associatedId] = assets[associatedId].name;

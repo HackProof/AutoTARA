@@ -66,7 +66,9 @@ router.post('/v1/mal/extract-assets', malController.extractAssets);
 router.post('/v1/simulation/shortest_path',
     upload.fields([
         { name: 'mar', maxCount: 1 },
-        { name: 'model', maxCount: 1 }
+        { name: 'model', maxCount: 1 },
+        { name: 'langGraph', maxCount: 1 },
+        { name: 'lang_graph_file', maxCount: 1 }
     ]),
     simulationController.runSimulation
 );
@@ -76,6 +78,7 @@ router.get('/v1/simulation/:sessionId/status', simulationController.getSimulatio
 
 // GET /api/v1/simulation/:sessionId/result - 시뮬레이션 결과 조회
 router.get('/v1/simulation/:sessionId/result', simulationController.getSimulationResult);
+router.get('/v1/simulation/:sessionId/artifacts/:artifactName', simulationController.getSimulationArtifact);
 
 // GET /api/v1/simulation/session/:sessionId - 세션 정보 조회
 router.get('/v1/simulation/session/:sessionId', simulationController.getSessionInfo);
@@ -86,6 +89,7 @@ router.delete('/v1/simulation/session/:sessionId', simulationController.deleteSe
 // TARA Assessment 관련 라우트
 // POST /api/v1/tara/analyze - LLM 분석 요청
 router.post('/v1/tara/analyze', taraAssessmentController.analyzeThreats);
+router.post('/v1/tara/assessments', taraAssessmentController.createAttackPathAssessments);
 
 // GET /api/v1/tara/assessments - 전체 조회 (query: sessionId)
 router.get('/v1/tara/assessments', taraAssessmentController.getAllAssessments);

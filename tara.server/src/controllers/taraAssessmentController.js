@@ -47,6 +47,47 @@ const analyzeThreats = async (req, res) => {
 };
 
 /**
+ * POST /api/v1/tara/assessments
+ * Report에서 선택한 attack path를 LLM 분석 없이 Dashboard에 추가합니다.
+ */
+const createAttackPathAssessments = async (req, res) => {
+    try {
+        const { sessionId, selectedPaths } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'sessionId is required'
+            });
+        }
+
+        if (!Array.isArray(selectedPaths) || selectedPaths.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'selectedPaths is required'
+            });
+        }
+
+        const assessments = await taraAssessmentService.createPendingAttackPathAssessments(
+            sessionId,
+            selectedPaths
+        );
+
+        res.json({
+            success: true,
+            data: assessments,
+            message: `${assessments.length} attack path(s) added`
+        });
+    } catch (err) {
+        console.error('[TaraAssessmentController] Create attack path error:', err);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Failed to add attack paths'
+        });
+    }
+};
+
+/**
  * GET /api/v1/tara/assessments
  * 전체 평가 결과를 조회합니다.
  */
@@ -228,6 +269,7 @@ const deleteAssessmentsBySessionId = async (req, res) => {
 
 module.exports = {
     analyzeThreats,
+    createAttackPathAssessments,
     getAllAssessments,
     getAssessmentById,
     updateAssessment,

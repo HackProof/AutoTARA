@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import {
     analyzeThreat,
+    createAttackPathAssessments,
     getAllAssessments,
     updateAssessment as apiUpdateAssessment,
     deleteAssessmentAttackPath as apiDeleteAssessmentAttackPath,
@@ -38,6 +39,21 @@ export const useTaraAssessmentStore = defineStore('taraAssessment', {
                 return newAssessments;
             } catch (err) {
                 this.error = err.message || 'Failed to analyze threats';
+                throw err;
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async analyzeSelectedAttackPaths(sessionId, selectedPaths) {
+            this.isLoading = true;
+            this.error = null;
+            try {
+                const createdAssessments = await createAttackPathAssessments(sessionId, selectedPaths);
+                this.assessments.unshift(...createdAssessments);
+                return createdAssessments;
+            } catch (err) {
+                this.error = err.message || 'Failed to add selected attack paths';
                 throw err;
             } finally {
                 this.isLoading = false;

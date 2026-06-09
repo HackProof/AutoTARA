@@ -21,7 +21,7 @@
           <button class="dropdown-item" @click="startMalsimHandler" :disabled="!canRunMalsim">
             <i class="fa-solid fa-play me-2"></i>Run malsim
             <span v-if="!hasLanguageGraph" class="text-muted small ms-2">(Requires MAL LangGraph)</span>
-            <span v-else-if="!tmStore.malModel || !tmStore.malLangspec" class="text-muted small ms-2">(Upload MAL first)</span>
+            <span v-else-if="!canUseLanguageForMalsim" class="text-muted small ms-2">(Missing LangGraph source)</span>
             <span v-else-if="!tmStore.entryThreat || !tmStore.targetThreat" class="text-muted small ms-2">(Set Entry and Target)</span>
           </button>
         </li>
@@ -399,6 +399,7 @@ import { useToast } from "vue-toastification";
 import ThreatSelectModal from './ThreatSelectModal.vue';
 import ThreatEditModal from './ThreatEditModal.vue';
 import { runSimulation as runMalsimApi } from '@/service/mal/malApiService.js';
+import { createMalModelFromDiagram } from '@/service/mal/modelTransform.js';
 import { isThreatAnalysisCellData } from '@/service/asset-types.js';
 import axios from 'axios';
 
@@ -655,14 +656,26 @@ const mitigationMappingRows = computed(() => {
 });
 
 const hasLanguageGraph = computed(() => Boolean(tmStore.data?.languageGraph));
+const malsimLanguageGraphSourceText = computed(() => tmStore.data?.languageGraphSourceText || '');
+const canUseLanguageForMalsim = computed(() =>
+  Boolean(malsimLanguageGraphSourceText.value)
+);
 
 const canRunMalsim = computed(() => {
   return hasLanguageGraph.value
-      && tmStore.malModel
-      && tmStore.malLangspec
+      && canUseLanguageForMalsim.value
       && tmStore.entryThreat
       && tmStore.targetThreat;
 });
+
+const isNoMalsimPathError = (message = '') => (
+  /no valid paths found from entry point to target/i.test(String(message))
+  || /no attack paths found/i.test(String(message))
+);
+
+const showNoMalsimPathMessage = () => {
+  toast.warning('Entry에서 Target까지 도달 가능한 공격 경로를 찾을 수 없습니다. Entry/Target attack step과 모델 연결 관계를 확인해주세요.');
+};
 
 const dropdownToggleRef = ref(null);
 let dropdown = null;
@@ -1364,8 +1377,8 @@ const startMalsimHandler = async () => {
     if (!canRunMalsim.value) {
         if (!hasLanguageGraph.value) {
             toast.error('MAL Simulator requires a MAL LangGraph');
-        } else if (!tmStore.malModel || !tmStore.malLangspec) {
-            toast.error('Please upload MAL model first');
+        } else if (!canUseLanguageForMalsim.value) {
+            toast.error('Missing original MAL LangGraph data. Please create the diagram from a MAL LangGraph file again.');
         } else if (!tmStore.entryThreat) {
             toast.error('Please select Entry threat');
         } else if (!tmStore.targetThreat) {
@@ -1391,18 +1404,41 @@ const startMalsimHandler = async () => {
         
         // 1. 시뮬레이션 시작 (sessionId 받기)
         // 원본 파일(.mar, .json)을 전송해야 함
-        if (!tmStore.malMarFile || !tmStore.malModelFile) {
-             throw new Error("Missing original MAL files. Please re-upload the MAL model.");
+        const graphInstance = graph?.value ? toRaw(graph.value) : null;
+        const currentDiagram = graphInstance?.toJSON
+            ? graphInstance.toJSON()
+            : tmStore.modifiedDiagram;
+        const malModel = createMalModelFromDiagram(tmStore.data, currentDiagram);
+
+        if (Object.keys(malModel.assets || {}).length === 0) {
+            throw new Error('No MAL assets exist in the current diagram.');
         }
+
+        const modelNameBase = tmStore.data.modelInfo?.title || tmStore.fileName || 'AutoTARA';
+        const modelFile = new File(
+            [JSON.stringify(malModel, null, 2)],
+            `${modelNameBase.replace(/\.json$/i, '')}_Model.json`,
+            { type: 'application/json' }
+        );
+
+        if (!malsimLanguageGraphSourceText.value) {
+            throw new Error('Missing original MAL LangGraph data.');
+        }
+        const languageFile = new File(
+            [malsimLanguageGraphSourceText.value],
+            'langGraph.json',
+            { type: 'application/json' }
+        );
 
         const startResult = await runMalsimApi(
             entryPoint,
             goal,
-            tmStore.malMarFile,
-            tmStore.malModelFile,
+            languageFile,
+            modelFile,
             {
                 seed: 42,
-                ttcMode: 0
+                ttcMode: 0,
+                languageType: 'langGraph'
             }
         );
         
@@ -1434,7 +1470,12 @@ const startMalsimHandler = async () => {
             console.log(`[malsim] Status: ${status}`);
             
             if (status === 'failed') {
-                throw new Error('Simulation failed on the server');
+                const serverError = statusData.error || statusData.message || '';
+                if (isNoMalsimPathError(serverError)) {
+                    showNoMalsimPathMessage();
+                    return;
+                }
+                throw new Error(serverError || 'Simulation failed on the server');
             }
         }
         
@@ -1467,7 +1508,7 @@ const startMalsimHandler = async () => {
             const attackPaths = result.attack_paths || {};
             
             if (!attackPathFound) {
-                toast.warning('No attack path found. The goal might not be reachable from the entry point.');
+                showNoMalsimPathMessage();
                 return;
             }
             
@@ -1476,6 +1517,9 @@ const startMalsimHandler = async () => {
                 sessionId,
                 attackPathFound,
                 attackPaths,
+                attackPath: result.attack_path || null,
+                attackGraph: result.attack_graph || resultData.attack_graph || null,
+                artifacts: result.artifacts || {},
                 rawResult: resultData
             };
 
@@ -1507,7 +1551,11 @@ const startMalsimHandler = async () => {
         
     } catch (error) {
         console.error('[malsim] Error:', error);
-        toast.error(error.message || 'Failed to run malsim simulation');
+        if (isNoMalsimPathError(error.message)) {
+            showNoMalsimPathMessage();
+        } else {
+            toast.error(error.message || 'Failed to run malsim simulation');
+        }
     } finally {
         isSimulating.value = false;
     }
@@ -1710,9 +1758,8 @@ const setEntryHandler = () => {
   const selectedNode = cellRef.value;
   const currentData = selectedNode.getData() || {};
   
-  // malsim용: 위협이 있으면 모달 열기
-  const threats = (currentData.threats || []).filter(t => t.status === 'open');
-  if (threats.length > 0 && tmStore.malModel) {
+  // LangGraph models set Entry through the threat selection modal.
+  if (hasLanguageGraph.value) {
     openThreatModal('entry', selectedNode);
     return;
   }
@@ -1775,9 +1822,8 @@ const setTargetHandler = () => {
   const selectedNode = cellRef.value;
   const currentData = selectedNode.getData() || {};
   
-  // malsim용: 위협이 있으면 모달 열기
-  const threats = (currentData.threats || []).filter(t => t.status === 'open');
-  if (threats.length > 0 && tmStore.malModel) {
+  // LangGraph models set Target through the threat selection modal.
+  if (hasLanguageGraph.value) {
     openThreatModal('target', selectedNode);
     return;
   }

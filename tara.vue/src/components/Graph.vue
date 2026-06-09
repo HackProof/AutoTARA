@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, provide } from 'vue'
+import { ref, onMounted, onUnmounted, computed, provide, watch } from 'vue'
 import diagramService from '@/service/diagram/diagram.js'
 import stencilService from '@/service/x6/stencil.js'
 import ElementProperties from "@/components/ElementProperties.vue";
@@ -80,9 +80,30 @@ provide('stencilController', stencilController)
 
 const threatEditModalRef = ref(false);
 
+const disposeStencil = () => {
+  const controller = stencilController.value
+  controller?.dispose?.()
+  controller?.stencil?.container?.remove?.()
+  stencilController.value = null
+  if (stencil_container.value) {
+    stencil_container.value.innerHTML = ''
+  }
+}
+
+const rebuildStencil = () => {
+  if (!graphInstance.value || !stencil_container.value) return
+  disposeStencil()
+  stencilController.value = stencilService.get(
+    graphInstance.value,
+    stencil_container.value,
+    undefined,
+    tmStore.data.languageGraph
+  )
+}
+
 onMounted(() => {
   graphInstance.value = diagramService.loadEditDiagram(graph_container.value, modifiedDiagram.value) // 그래프 초기화
-  stencilController.value = stencilService.get(graphInstance.value, stencil_container.value, undefined, tmStore.data.languageGraph)  // Initialize the stencil
+  rebuildStencil()
 
   // Listen to history changes
   graphInstance.value.getPlugin('history').on('change', () => {
@@ -119,8 +140,16 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stencilController.value?.dispose?.()
+  disposeStencil()
 })
+
+watch(
+  () => tmStore.data.languageGraph,
+  () => {
+    rebuildStencil()
+  },
+  { deep: false }
+)
 
 const showThreatEditModal = (threatId, state) => {
   if (threatEditModalRef.value) {

@@ -36,12 +36,22 @@ const runSimulation = async (req, res) => {
         // 파일 확인
         const marFile = req.files && req.files['mar'] ? req.files['mar'][0] : null;
         const modelFile = req.files && req.files['model'] ? req.files['model'][0] : null;
+        const langGraphFile = req.files && req.files['langGraph']
+            ? req.files['langGraph'][0]
+            : (req.files && req.files['lang_graph_file'] ? req.files['lang_graph_file'][0] : null);
 
         // 필수 파라미터 확인
-        if (!marFile) {
+        if (!langGraphFile && !marFile) {
             return res.status(400).json({
                 success: false,
-                message: 'MAR file is required'
+                message: 'MAL LangGraph file is required'
+            });
+        }
+
+        if (!modelFile) {
+            return res.status(400).json({
+                success: false,
+                message: 'MAL model file is required'
             });
         }
 
@@ -60,18 +70,25 @@ const runSimulation = async (req, res) => {
         }
 
         console.log(`[SimulationController] Running simulation: ${entryPoint} -> ${goal}`);
-        console.log(`[SimulationController] MAR File: ${marFile.originalname}, Size: ${marFile.size}`);
+        if (langGraphFile) {
+            console.log(`[SimulationController] LangGraph File: ${langGraphFile.originalname}, Size: ${langGraphFile.size}`);
+        }
+        if (marFile) {
+            console.log(`[SimulationController] MAR File: ${marFile.originalname}, Size: ${marFile.size}`);
+        }
         if (modelFile) {
             console.log(`[SimulationController] Model File: ${modelFile.originalname}, Size: ${modelFile.size}`);
         }
 
         // 시뮬레이션 실행 (Python 서버로 전송)
         const result = await simulationService.runSimulation({
-            marFileBuffer: marFile.buffer,
+            marFileBuffer: marFile ? marFile.buffer : null,
+            langGraphFileBuffer: langGraphFile ? langGraphFile.buffer : null,
             modelFileBuffer: modelFile ? modelFile.buffer : null,
             entryPoint,
             goal,
-            langFileName: marFile.originalname,
+            langFileName: marFile ? marFile.originalname : null,
+            langGraphFileName: langGraphFile ? langGraphFile.originalname : 'langGraph.json',
             modelFileName: modelFile ? modelFile.originalname : 'model.json',
             seed,
             ttcMode
@@ -147,7 +164,7 @@ const deleteSession = async (req, res) => {
     try {
         const { sessionId } = req.params;
 
-        simulationService.cleanupSession(sessionId);
+        await simulationService.cleanupSession(sessionId);
 
         res.json({
             success: true,
@@ -226,10 +243,41 @@ const getSimulationResult = async (req, res) => {
     }
 };
 
+/**
+ * GET /api/v1/simulation/:sessionId/artifacts/:artifactName
+ * Python simulator artifact proxy.
+ */
+const getSimulationArtifact = async (req, res) => {
+    try {
+        const { sessionId, artifactName } = req.params;
+        const artifact = await simulationService.getSimulationArtifact(sessionId, artifactName);
+
+        if (!artifact.success) {
+            return res.status(artifact.statusCode || 404).json({
+                success: false,
+                message: artifact.error || 'Artifact not found'
+            });
+        }
+
+        res.setHeader('Content-Type', artifact.contentType || 'application/octet-stream');
+        if (artifact.contentDisposition) {
+            res.setHeader('Content-Disposition', artifact.contentDisposition);
+        }
+        artifact.stream.pipe(res);
+    } catch (err) {
+        console.error('[SimulationController] Artifact error:', err);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Failed to get simulation artifact'
+        });
+    }
+};
+
 module.exports = {
     runSimulation,
     getSessionInfo,
     deleteSession,
     getSimulationStatus,
-    getSimulationResult
+    getSimulationResult,
+    getSimulationArtifact
 };

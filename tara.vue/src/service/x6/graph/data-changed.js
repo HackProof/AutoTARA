@@ -140,6 +140,49 @@ const styles = {
     }
 };
 
+const setAttackPathNodeFill = (cell) => {
+    cell.setAttrByPath('body/fill', styles.analysisPathNode.fill);
+    cell.setAttrByPath('body/fillOpacity', 1);
+    cell.setAttrByPath('body/opacity', 1);
+
+    if (cell.shape === 'store' || cell.getData?.()?.type === 'tm.Store') {
+        cell.setAttrByPath('body/strokeOpacity', 0);
+    } else {
+        cell.setAttrByPath('body/strokeOpacity', 1);
+    }
+};
+
+const resetNodeFill = (cell) => {
+    const data = cell.getData?.() || {};
+    if (cell.shape === 'trust-boundary-box' || data.type === 'tm.BoundaryBox') {
+        cell.setAttrByPath('body/fill', 'transparent');
+        cell.setAttrByPath('body/fillOpacity', 0);
+        cell.setAttrByPath('body/opacity', 1);
+        return;
+    }
+
+    if (cell.shape === 'actor' || data.type === 'tm.Actor') {
+        cell.setAttrByPath('body/fill', 'transparent');
+        cell.setAttrByPath('body/fillOpacity', 0);
+        cell.setAttrByPath('body/opacity', 1);
+        cell.setAttrByPath('body/strokeOpacity', 1);
+        return;
+    }
+
+    if (cell.shape === 'store' || data.type === 'tm.Store') {
+        cell.setAttrByPath('body/fill', 'transparent');
+        cell.setAttrByPath('body/fillOpacity', 0);
+        cell.setAttrByPath('body/opacity', 0);
+        cell.setAttrByPath('body/strokeOpacity', 1);
+        return;
+    }
+
+    cell.setAttrByPath('body/fill', 'transparent');
+    cell.setAttrByPath('body/fillOpacity', 1);
+    cell.setAttrByPath('body/opacity', 1);
+    cell.setAttrByPath('body/strokeOpacity', 1);
+};
+
 const updateStyleAttrs = (cell) => {
     const tmStore = useThreatModelStore();
     const cellStore = useCellStore();
@@ -204,8 +247,7 @@ const updateStyleAttrs = (cell) => {
             color = styles.analysisPathNode.stroke;
             strokeWidth = styles.analysisPathNode.strokeWidth;
 
-            // Direct attribute update for Fill (since updateStyle might not cover body/fill)
-            cell.setAttrByPath('body/fill', styles.analysisPathNode.fill);
+            setAttackPathNodeFill(cell);
         } else {
             // Edge Styling: Thick Red Solid
             color = styles.analysisPathEdge.color;
@@ -217,11 +259,7 @@ const updateStyleAttrs = (cell) => {
         // Ideally we should revert to default fill, e.g. white or transparent.
         // Assuming default is white or defined elsewhere.
         if (cell.isNode && cell.isNode()) {
-            // TrustBoundaryBox should remain transparent and preserve its stroke
-            // TrustBoundaryBox should remain transparent
-            if (cell.shape !== 'trust-boundary-box' && cellData.type !== 'tm.BoundaryBox') {
-                cell.setAttrByPath('body/fill', '#FFFFFF'); // Or original default
-            }
+            resetNodeFill(cell);
         }
     }
 

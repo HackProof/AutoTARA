@@ -22,7 +22,7 @@ services:
 
   mal-simulator:
     build:
-      context: ./mal-simulator.server
+      context: ./simulator.server
     container_name: mal_simulator_server
     restart: always
     environment:

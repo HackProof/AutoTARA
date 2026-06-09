@@ -1,33 +1,15 @@
 /.idea/
-/MAL/
-/mal-dsl/
-/test/
 
-/db/backups
-
-/tara.server/node_modules
+/tara.server/node_modules/
 /tara.server/.idea/
-/tara.server/temp/
 /tara.server/.env
 
-/tara.vue/node_modules
+/tara.vue/node_modules/
 /tara.vue/.idea/
 /tara.vue/.env
-/tara.vue/src/components/TestComponents.vue
 /tara.vue/dist/
 
-/mal-simulator.server/malvenv
-/mal-simulator.server/logs
-/mal-simulator.server/__pycache__
-/mal-simulator.server/simulation_workspace
+/mal-simulator.server/
+/simulator.server/test/malsim/
 
-/simulator/
-
-/sample/testcase/logs
-/sample/vehicleLang_v2/mal_KOR
-
-.codex
-/logs
-
-/malvenv/
-/mal-gui/
+/sample/logs/

@@ -48,7 +48,7 @@
 
     <button
       type="button"
-      class="btn btn-sm btn-white border"
+      class="btn btn-sm btn-white border disabled"
       title="Auto Layout"
       @click="applyHierarchicalLayout"
     >
@@ -70,16 +70,16 @@
         class="btn btn-sm btn-white border fw-bold text-dark" 
         title="Create Report" 
         @click="openReportHandler" 
-        :disabled="!simulationResult"
+        :disabled="!hasReportResult"
       >
-        <i class="fa-solid fa-file-lines me-1" :class="{'text-muted': !simulationResult, 'text-primary': simulationResult}"></i> Report
+        <i class="fa-solid fa-file-lines me-1" :class="{'text-muted': !hasReportResult, 'text-primary': hasReportResult}"></i> Report
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { inject, ref, onMounted, onUnmounted, watch } from 'vue';
+import { computed, inject, ref, onMounted, onUnmounted, watch } from 'vue';
 import { useThreatModelStore } from '@/stores/threatModelStore.js';
 import { useCellStore } from '@/stores/cellStore.js';
 import SimulationReportModal from './SimulationReportModal.vue';
@@ -92,13 +92,14 @@ const tmStore = useThreatModelStore();
 const cellStore = useCellStore();
 
 // Reactive references for Store
-const { simulationResult } = storeToRefs(tmStore);
+const { simulationResult, malsimResult } = storeToRefs(tmStore);
+const hasReportResult = computed(() => Boolean(simulationResult.value || malsimResult.value));
 
 // Modal State
 const showReport = ref(false);
 
 const openReportHandler = () => {
-    if (simulationResult.value) {
+    if (hasReportResult.value) {
         showReport.value = true;
     }
 };

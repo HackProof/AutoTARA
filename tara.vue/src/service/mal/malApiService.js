@@ -151,19 +151,22 @@ export async function convertMalToDfdWithShapes(model, langspec, shapeMapping) {
  * @param {Object} options - 추가 옵션 { seed, ttcMode }
  * @returns {Promise<Object>} 시뮬레이션 시작 응답 (sessionId 포함)
  */
-export async function runSimulation(entryPoint, goal, marFile, modelFile, options = {}) {
+export async function runSimulation(entryPoint, goal, languageFile, modelFile, options = {}) {
     const formData = new FormData();
     formData.append('entryPoint', entryPoint);
     formData.append('goal', goal);
 
-    if (marFile) {
-        formData.append('mar', marFile);
+    if (languageFile) {
+        const isMar = options.languageType === 'mar' || /\.mar$/i.test(languageFile.name || '');
+        formData.append(isMar ? 'mar' : 'langGraph', languageFile);
     } else {
-        throw new Error('MAR file is required');
+        throw new Error('MAL LangGraph file is required');
     }
 
     if (modelFile) {
         formData.append('model', modelFile);
+    } else {
+        throw new Error('MAL model file is required');
     }
 
     if (options.seed !== undefined) formData.append('seed', options.seed);
@@ -230,7 +233,9 @@ function normalizeShortestPathResult(data) {
         result: {
             ...result,
             attack_path_found: attackPathFound,
-            attack_paths: attackPaths
+            attack_paths: Object.keys(result.attack_paths || {}).length > 0
+                ? result.attack_paths
+                : attackPaths
         }
     };
 }
@@ -260,6 +265,11 @@ export async function getSimulationResult(sessionId, options = {}) {
     throw new Error(response.data.message || 'Failed to get simulation result');
 }
 
+export function getSimulationArtifactUrl(sessionId, artifactName) {
+    const baseUrl = import.meta.env.VITE_API_URL || '';
+    return `${baseUrl}/v1/simulation/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactName)}`;
+}
+
 /**
  * 시뮬레이션 세션 삭제
  * @param {string} sessionId - 시뮬레이션 세션 ID
@@ -283,5 +293,6 @@ export default {
     runSimulation,
     getSimulationStatus,
     getSimulationResult,
+    getSimulationArtifactUrl,
     deleteSimulationSession
 };

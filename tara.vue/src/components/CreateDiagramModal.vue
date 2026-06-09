@@ -123,6 +123,7 @@ const createDiagramModal = ref(null)
 const languageGraphInput = ref(null)
 const languageGraphFile = ref(null)
 const parsedLanguageGraph = ref(null)
+const languageGraphSourceText = ref('')
 const errorMessage = ref('')
 const showAssetConfigModal = ref(false)
 const assetTypeConfigAssets = ref([])
@@ -149,6 +150,7 @@ const resetForm = () => {
   form.description = ''
   languageGraphFile.value = null
   parsedLanguageGraph.value = null
+  languageGraphSourceText.value = ''
   errorMessage.value = ''
   showAssetConfigModal.value = false
   assetTypeConfigAssets.value = []
@@ -162,6 +164,7 @@ const handleLanguageGraphSelected = async (event) => {
   const file = event.target.files?.[0]
   languageGraphFile.value = file || null
   parsedLanguageGraph.value = null
+  languageGraphSourceText.value = ''
   errorMessage.value = ''
 
   if (!file) return
@@ -180,9 +183,11 @@ const handleLanguageGraphSelected = async (event) => {
     }
 
     parsedLanguageGraph.value = parsed
+    languageGraphSourceText.value = content
   } catch (error) {
     languageGraphFile.value = null
     parsedLanguageGraph.value = null
+    languageGraphSourceText.value = ''
     errorMessage.value = error.message || 'Failed to parse LanguageGraph JSON.'
 
     if (languageGraphInput.value) {
@@ -222,7 +227,10 @@ const buildConfiguredLanguageGraph = (configuredAssets) => {
   }
 }
 
-const finishCreateDiagram = async (languageGraph = parsedLanguageGraph.value) => {
+const finishCreateDiagram = async ({
+  displayLanguageGraph = null,
+  sourceLanguageGraph = parsedLanguageGraph.value
+} = {}) => {
   if (!canCreate.value) {
     errorMessage.value = 'Enter a title and fix any invalid LanguageGraph file.'
     return
@@ -230,9 +238,14 @@ const finishCreateDiagram = async (languageGraph = parsedLanguageGraph.value) =>
 
   const threatModel = createEmptyThreatModelFromLanguageGraph(
       form,
-      languageGraph,
+      sourceLanguageGraph,
       languageGraphFile.value?.name || ''
   )
+  if (displayLanguageGraph) {
+    threatModel.languageGraph = displayLanguageGraph
+    threatModel.languageGraphSource = sourceLanguageGraph
+  }
+  threatModel.languageGraphSourceText = sourceLanguageGraph ? languageGraphSourceText.value : ''
 
   tmStore.clear()
   tmStore.setFileName(`${form.title}.json`)
@@ -256,13 +269,16 @@ const createDiagram = async () => {
     return
   }
 
-  await finishCreateDiagram(null)
+  await finishCreateDiagram({ displayLanguageGraph: null, sourceLanguageGraph: null })
 }
 
 const handleAssetTypeConfigConfirm = async (configuredAssets) => {
   showAssetConfigModal.value = false
   const configuredLanguageGraph = buildConfiguredLanguageGraph(configuredAssets)
-  await finishCreateDiagram(configuredLanguageGraph)
+  await finishCreateDiagram({
+    displayLanguageGraph: configuredLanguageGraph,
+    sourceLanguageGraph: parsedLanguageGraph.value
+  })
 }
 
 const handleAssetTypeConfigCancel = () => {

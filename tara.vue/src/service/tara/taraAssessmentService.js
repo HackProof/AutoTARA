@@ -29,6 +29,18 @@ export async function analyzeThreat(sessionId, simulationResult) {
     throw new Error(response.data.message || 'Analysis failed');
 }
 
+export async function createAttackPathAssessments(sessionId, selectedPaths) {
+    const response = await apiClient.post('/v1/tara/assessments', {
+        sessionId,
+        selectedPaths
+    });
+
+    if (response.data.success) {
+        return response.data.data;
+    }
+    throw new Error(response.data.message || 'Failed to add attack paths');
+}
+
 /**
  * 전체 평가 결과 조회
  * @param {string} [sessionId] - 세션 ID (선택)
@@ -104,6 +116,7 @@ export async function deleteAssessmentsBySessionId(sessionId) {
 
 export default {
     analyzeThreat,
+    createAttackPathAssessments,
     getAllAssessments,
     updateAssessment,
     deleteAssessmentAttackPath,

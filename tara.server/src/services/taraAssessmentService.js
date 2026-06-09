@@ -727,6 +727,29 @@ function splitAssetStep(fullStep) {
     };
 }
 
+function splitGroupedAttackSteps(attackStep) {
+    return toStepLabel(attackStep)
+        .split('->')
+        .map((item) => normalizePromptAttackStep(item))
+        .filter(Boolean);
+}
+
+function normalizeEndpointAttackStep(value, fallbackNode, { preferLast = false } = {}) {
+    const rawValue = toStepLabel(value || fallbackNode?.fullStep || '');
+    const rawParts = splitAssetStep(rawValue);
+    const assetName = toStepLabel(rawParts.assetName || fallbackNode?.assetName);
+    const attackSteps = splitGroupedAttackSteps(rawParts.attackStep || fallbackNode?.attackStep);
+    const attackStep = attackSteps.length
+        ? attackSteps[preferLast ? attackSteps.length - 1 : 0]
+        : toStepLabel(rawParts.attackStep || fallbackNode?.attackStep);
+
+    if (assetName && attackStep) {
+        return `${assetName}:${attackStep}`;
+    }
+
+    return assetName || rawValue;
+}
+
 function toStepLabel(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
@@ -742,6 +765,69 @@ async function getAssessmentsBySessionId(sessionId) {
 
 async function getAssessmentById(id) {
     return taraAssessmentRepository.getAssessmentById(id);
+}
+
+function buildPendingAttackPathRows(sessionId, selectedPaths) {
+    const pathList = Array.isArray(selectedPaths) ? selectedPaths : [];
+    const analysisBatchId = randomUUID();
+
+    return pathList
+        .map((path, index) => {
+            const sourceShortestPath = normalizePathNodes(
+                path?.steps ||
+                path?.attackPath ||
+                path?.source_shortest_path ||
+                []
+            );
+
+            if (sourceShortestPath.length === 0) {
+                return null;
+            }
+
+            const entryAsset = normalizeEndpointAttackStep(
+                path?.entry || path?.entryAsset,
+                sourceShortestPath[0],
+                { preferLast: false }
+            );
+            const targetAsset = normalizeEndpointAttackStep(
+                path?.target || path?.targetAsset,
+                sourceShortestPath[sourceShortestPath.length - 1],
+                { preferLast: true }
+            );
+
+            return {
+                session_id: sessionId,
+                entry_asset: entryAsset,
+                target_asset: targetAsset,
+                cia_attribute: path?.ciaAttribute || 'Integrity',
+                damage_scenario: '',
+                impact_category: path?.impactCategory || 'Operational',
+                threat_scenario: '',
+                attack_path: {
+                    analysis_batch_id: analysisBatchId,
+                    source_shortest_path: sourceShortestPath,
+                    selected_attack_path_key: path?.key || `path${index + 1}`,
+                    selected_attack_path_label: path?.label || `Attack Path ${index + 1}`,
+                    generated_attack_paths: {},
+                    scenario_linkage_check: null,
+                    pending_expansion: true
+                }
+            };
+        })
+        .filter(Boolean);
+}
+
+async function createPendingAttackPathAssessments(sessionId, selectedPaths) {
+    if (!sessionId) {
+        throw new Error('sessionId is required');
+    }
+
+    const rows = buildPendingAttackPathRows(sessionId, selectedPaths);
+    if (rows.length === 0) {
+        throw new Error('At least one attack path is required');
+    }
+
+    return taraAssessmentRepository.createAssessments(rows);
 }
 
 async function updateAssessment(id, data) {
@@ -816,6 +902,7 @@ async function deleteAssessmentsBySessionId(sessionId) {
 
 module.exports = {
     analyzeThreatWithLLM,
+    createPendingAttackPathAssessments,
     getAllAssessments,
     getAssessmentsBySessionId,
     getAssessmentById,

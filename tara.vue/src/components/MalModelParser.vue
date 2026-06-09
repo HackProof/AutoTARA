@@ -1,46 +1,43 @@
 <template>
   <div class="mal-upload-container">
-    <!-- MAL Model Upload Button -->
-    <button class="btn btn-success btn-lg px-4 disabled" @click="openMalDialog">
+    <button class="btn btn-success btn-lg px-4" @click="openMalDialog">
       <i class="fa-solid fa-diagram-project"></i>
-      Import MAL Model
+      Import Diagram Model
     </button>
-    
-    <!-- Hidden file inputs -->
+
     <input
-        type="file"
-        ref="modelInput"
-        class="d-none"
-        @change="handleModelSelected"
-        accept=".json"
+      type="file"
+      ref="modelInput"
+      class="d-none"
+      @change="handleModelSelected"
+      accept=".json,application/json"
     >
     <input
-        type="file"
-        ref="marInput"
-        class="d-none"
-        @change="handleMarSelected"
-        accept=".mar"
+      type="file"
+      ref="languageGraphInput"
+      class="d-none"
+      @change="handleLanguageGraphSelected"
+      accept=".json,application/json"
     >
 
-    <!-- MAL Upload Modal -->
     <div class="modal fade" id="malUploadModal" tabindex="-1" ref="malModal">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
               <i class="fa-solid fa-file-import me-2 text-success"></i>
-              Import MAL Model to DFD
+              Import LangGraph Model to DFD
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
+
           <div class="modal-body">
-            <!-- Model File Upload -->
             <div class="upload-section mb-3">
               <label class="form-label fw-bold">
                 <i class="fa-solid fa-file-code me-2 text-primary"></i>
-                Model File (.json)
+                Diagram Model File (.json)
               </label>
-              <div 
+              <div
                 class="upload-box p-3 rounded border text-center"
                 :class="modelFile ? 'border-success bg-success-subtle' : 'border-secondary'"
                 @click="$refs.modelInput.click()"
@@ -56,71 +53,68 @@
                 </template>
                 <template v-else>
                   <i class="fa-solid fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
-                  <p class="mb-0 text-muted">Click or drag the file here</p>
+                  <p class="mb-0 text-muted">Click or drag the model file here</p>
                 </template>
               </div>
             </div>
 
-            <!-- MAR File Upload -->
             <div class="upload-section mb-3">
               <label class="form-label fw-bold">
-                <i class="fa-solid fa-file-archive me-2 text-warning"></i>
-                Language Definition File (.mar)
+                <i class="fa-solid fa-file-code me-2 text-warning"></i>
+                LangGraph File (.json)
               </label>
-              <div 
+              <div
                 class="upload-box p-3 rounded border text-center"
-                :class="marFile ? 'border-success bg-success-subtle' : 'border-secondary'"
-                @click="$refs.marInput.click()"
+                :class="languageGraphFile ? 'border-success bg-success-subtle' : 'border-secondary'"
+                @click="$refs.languageGraphInput.click()"
                 @dragover.prevent
-                @drop.prevent="handleMarDrop"
+                @drop.prevent="handleLanguageGraphDrop"
               >
-                <template v-if="marFile">
+                <template v-if="languageGraphFile">
                   <i class="fa-solid fa-check-circle text-success me-2"></i>
-                  <span>{{ marFile.name }}</span>
-                  <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="clearMarFile">
+                  <span>{{ languageGraphFile.name }}</span>
+                  <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="clearLanguageGraphFile">
                     <i class="fa-solid fa-times"></i>
                   </button>
                 </template>
                 <template v-else>
                   <i class="fa-solid fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
-                  <p class="mb-0 text-muted">Click or drag the file here</p>
+                  <p class="mb-0 text-muted">Click or drag the LangGraph file here</p>
                 </template>
               </div>
             </div>
 
-            <!-- Loading Indicator -->
             <div v-if="isLoading" class="text-center py-3">
               <div class="spinner-border text-success" role="status">
-                <span class="visually-hidden">Converting...</span>
+                <span class="visually-hidden">Importing...</span>
               </div>
-              <p class="mt-2 text-muted">Converting MAL model to DFD...</p>
+              <p class="mt-2 text-muted">Building diagram from LangGraph and model...</p>
             </div>
 
-            <!-- Error Message -->
             <div v-if="errorMessage" class="alert alert-danger mt-3">
               <i class="fa-solid fa-exclamation-triangle me-2"></i>
               {{ errorMessage }}
             </div>
           </div>
+
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               Cancel
             </button>
-            <button 
-              type="button" 
-              class="btn btn-success" 
-              :disabled="!canConvert || isLoading"
-              @click="convertToDfd"
+            <button
+              type="button"
+              class="btn btn-success"
+              :disabled="!canImport || isLoading"
+              @click="importToDfd"
             >
               <i class="fa-solid fa-exchange-alt me-2"></i>
-              Convert to DFD
+              Show Graph
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Asset Type Config Modal -->
     <AssetTypeConfigModal
       :visible="showAssetConfigModal"
       :assets="extractedAssets"
@@ -131,79 +125,91 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useThreatModelStore } from '@/stores/threatModelStore.js'
-import { extractLangspec, extractAssets, convertMalToDfdWithShapes } from '@/service/mal/malApiService.js'
 import { Modal } from 'bootstrap'
+import { useThreatModelStore } from '@/stores/threatModelStore.js'
+import { normalizeLanguageGraph } from '@/service/langGraph/languageGraph.js'
+import { createDiagramFromMalModel } from '@/service/mal/modelTransform.js'
 import AssetTypeConfigModal from './AssetTypeConfigModal.vue'
 
 const router = useRouter()
 const tmStore = useThreatModelStore()
 
-// Refs
 const modelInput = ref(null)
-const marInput = ref(null)
+const languageGraphInput = ref(null)
 const malModal = ref(null)
 
-// State
 const modelFile = ref(null)
-const marFile = ref(null)
+const languageGraphFile = ref(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
 let modalInstance = null
 
-// Asset Type Config Modal 관련 상태
 const showAssetConfigModal = ref(false)
 const extractedAssets = ref([])
 const parsedModel = ref(null)
-const parsedLangspec = ref(null)
+const parsedLanguageGraph = ref(null)
+const languageGraphSourceText = ref('')
+const parsedModelType = ref('')
 
-// Computed
-const canConvert = computed(() => modelFile.value && marFile.value)
+const canImport = computed(() => modelFile.value && languageGraphFile.value)
 
 onMounted(() => {
-  // Initialize Bootstrap modal
   if (malModal.value) {
     modalInstance = new Modal(malModal.value)
   }
 })
 
-const openMalDialog = () => {
-  errorMessage.value = ''
-  if (modalInstance) {
-    modalInstance.show()
-  }
+const cleanupModalState = () => {
+  modalInstance?.hide()
+  document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove())
+  document.body.classList.remove('modal-open')
+  document.body.style.removeProperty('overflow')
+  document.body.style.removeProperty('padding-right')
 }
 
+onUnmounted(() => {
+  cleanupModalState()
+  modalInstance?.dispose()
+  modalInstance = null
+})
+
+const openMalDialog = () => {
+  errorMessage.value = ''
+  modalInstance?.show()
+}
+
+const isJsonFile = (file) => file?.name?.toLowerCase().endsWith('.json')
+
 const handleModelSelected = (evt) => {
-  const file = evt.target.files[0]
+  const file = evt.target.files?.[0]
   if (file) {
     modelFile.value = file
     errorMessage.value = ''
   }
 }
 
-const handleMarSelected = (evt) => {
-  const file = evt.target.files[0]
+const handleLanguageGraphSelected = (evt) => {
+  const file = evt.target.files?.[0]
   if (file) {
-    marFile.value = file
+    languageGraphFile.value = file
     errorMessage.value = ''
   }
 }
 
 const handleModelDrop = (evt) => {
-  const file = evt.dataTransfer.files[0]
-  if (file && file.name.endsWith('.json')) {
+  const file = evt.dataTransfer.files?.[0]
+  if (isJsonFile(file)) {
     modelFile.value = file
     errorMessage.value = ''
   }
 }
 
-const handleMarDrop = (evt) => {
-  const file = evt.dataTransfer.files[0]
-  if (file && file.name.endsWith('.mar')) {
-    marFile.value = file
+const handleLanguageGraphDrop = (evt) => {
+  const file = evt.dataTransfer.files?.[0]
+  if (isJsonFile(file)) {
+    languageGraphFile.value = file
     errorMessage.value = ''
   }
 }
@@ -215,105 +221,187 @@ const clearModelFile = () => {
   }
 }
 
-const clearMarFile = () => {
-  marFile.value = null
-  if (marInput.value) {
-    marInput.value.value = ''
+const clearLanguageGraphFile = () => {
+  languageGraphFile.value = null
+  if (languageGraphInput.value) {
+    languageGraphInput.value.value = ''
   }
 }
 
-/**
- * 1단계: 파일 파싱 및 자산 목록 추출 -> Asset Config Modal 표시
- */
-const convertToDfd = async () => {
-  if (!canConvert.value) return
+const parseJsonText = (text, label) => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`${label} is not valid JSON.`)
+  }
+}
+
+const getModelTitle = (model) => (
+  model?.metadata?.name
+  || model?.modelInfo?.title
+  || modelFile.value?.name?.replace(/\.json$/i, '')
+  || 'MAL Model'
+)
+
+const isMalAssetModel = (model) => (
+  model?.assets
+  && typeof model.assets === 'object'
+  && !Array.isArray(model.assets)
+)
+
+const isDiagramThreatModel = (model) => (
+  model?.diagrams?.cells
+  && Array.isArray(model.diagrams.cells)
+)
+
+const buildAssetTypeConfigAssets = () => {
+  const normalized = normalizeLanguageGraph(parsedLanguageGraph.value, languageGraphFile.value?.name || '')
+  const languageAssetsByName = new Map(normalized.assets.map(asset => [asset.name, asset]))
+  const seenTypes = new Set()
+
+  return Object.values(parsedModel.value?.assets || {})
+    .map(asset => asset?.type)
+    .filter(Boolean)
+    .filter(type => {
+      if (seenTypes.has(type)) return false
+      seenTypes.add(type)
+      return true
+    })
+    .map(type => {
+      const languageAsset = languageAssetsByName.get(type)
+      return {
+        id: type,
+        name: type,
+        malType: languageAsset?.category || languageAsset?.superAsset || type,
+        dfdShape: languageAsset?.dfdShape || 'process'
+      }
+    })
+}
+
+const buildConfiguredLanguageGraph = (configuredAssets) => {
+  const shapeByAssetName = new Map(
+    configuredAssets.map(asset => [asset.id || asset.name, asset.dfdShape || 'process'])
+  )
+  const normalized = normalizeLanguageGraph(parsedLanguageGraph.value, languageGraphFile.value?.name || '')
+
+  return {
+    ...normalized,
+    assets: normalized.assets.map(asset => ({
+      ...asset,
+      dfdShape: shapeByAssetName.get(asset.name) || asset.dfdShape || 'process'
+    }))
+  }
+}
+
+const createThreatModel = (diagram, languageGraph) => {
+  const title = getModelTitle(parsedModel.value)
+  const version = parsedModel.value?.version
+      || parsedModel.value?.metadata?.langVersion
+      || parsedModel.value?.modelInfo?.version
+      || languageGraph.metadata?.version
+      || '1.0.0'
+
+  return {
+    version,
+    modelInfo: {
+      title,
+      version,
+      template: 'langgraph-model',
+      description: parsedModel.value?.modelInfo?.description
+          || `Imported from ${modelFile.value.name} and ${languageGraphFile.value.name}`
+    },
+    diagrams: diagram,
+    threatCounter: parsedModel.value?.threatCounter || 0,
+    languageGraph,
+    languageGraphSource: parsedLanguageGraph.value,
+    languageGraphSourceText: languageGraphSourceText.value
+  }
+}
+
+const finishImport = async (diagram, languageGraph) => {
+  const threatModel = createThreatModel(diagram, languageGraph)
+  const title = threatModel.modelInfo.title
+
+  tmStore.clear()
+  tmStore.setFileName(`${title}.json`)
+  tmStore._stashThreatModel(threatModel)
+  tmStore.selectDiagram(threatModel.diagrams)
+
+  tmStore.malModel = isMalAssetModel(parsedModel.value) ? parsedModel.value : null
+  tmStore.malLangspec = null
+  tmStore.malMarFile = null
+  tmStore.malModelFile = modelFile.value
+  tmStore.malMarFileName = ''
+  tmStore.malModelFileName = modelFile.value.name
+
+  console.log('[MalModelParser] LangGraph, model, and diagram saved for simulation')
+  cleanupModalState()
+  await router.push({ name: 'EditDiagram', params: { title } })
+}
+
+const importToDfd = async () => {
+  if (!canImport.value) return
 
   isLoading.value = true
   errorMessage.value = ''
 
   try {
-    // 1. 모델 파일 읽기
     const modelText = await modelFile.value.text()
-    parsedModel.value = JSON.parse(modelText)
+    languageGraphSourceText.value = await languageGraphFile.value.text()
+    parsedModel.value = parseJsonText(modelText, 'Diagram model file')
+    parsedLanguageGraph.value = parseJsonText(languageGraphSourceText.value, 'LangGraph file')
 
-    // 2. MAR 파일에서 langspec 추출
-    parsedLangspec.value = await extractLangspec(marFile.value)
+    const normalizedLanguageGraph = normalizeLanguageGraph(
+      parsedLanguageGraph.value,
+      languageGraphFile.value?.name || ''
+    )
 
-    // 3. 자산 목록 추출
-    extractedAssets.value = await extractAssets(parsedModel.value)
-
-    // 4. 업로드 모달 닫기 및 Asset Config Modal 열기
-    if (modalInstance) {
-      modalInstance.hide()
+    if (!normalizedLanguageGraph.assets.some(asset => !asset.isAbstract)) {
+      throw new Error('No concrete assets were found in the LangGraph file.')
     }
-    showAssetConfigModal.value = true
 
+    if (isDiagramThreatModel(parsedModel.value)) {
+      parsedModelType.value = 'diagram'
+      await finishImport(parsedModel.value.diagrams, normalizedLanguageGraph)
+      return
+    }
+
+    if (!isMalAssetModel(parsedModel.value)) {
+      throw new Error('Diagram model file must contain either diagrams.cells or an assets object.')
+    }
+
+    parsedModelType.value = 'assets'
+    extractedAssets.value = buildAssetTypeConfigAssets()
+    modalInstance?.hide()
+    showAssetConfigModal.value = true
   } catch (error) {
-    console.error('MAL parsing failed:', error)
-    errorMessage.value = error.message || 'Failed to parse MAL model'
+    console.error('LangGraph model import failed:', error)
+    errorMessage.value = error.message || 'Failed to import LangGraph model.'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * 2단계: Asset Config Modal에서 확인 -> DFD 생성
- */
 const handleAssetConfigConfirm = async (configuredAssets) => {
   showAssetConfigModal.value = false
   isLoading.value = true
   errorMessage.value = ''
 
   try {
-    // shapeMapping 객체 생성
-    const shapeMapping = {}
-    configuredAssets.forEach(asset => {
-      shapeMapping[asset.id] = asset.dfdShape
-    })
-
-    // DFD 변환 (shapeMapping 적용)
-    const result = await convertMalToDfdWithShapes(
-      parsedModel.value, 
-      parsedLangspec.value, 
-      shapeMapping
-    )
-
-    // Store에 저장
-    tmStore.setFileName(modelFile.value.name.replace('.json', '_dfd.json'))
-    tmStore._stashThreatModel(result.dfd)
-    tmStore.selectDiagram(result.dfd.diagrams)
-    
-    // 시뮬레이션을 위한 원본 model, langspec, 그리고 파일명 저장
-    tmStore.malModel = parsedModel.value
-    tmStore.malLangspec = parsedLangspec.value
-    // 원본 .mar 파일과 모델 파일 저장 (시뮬레이션용)
-    tmStore.malMarFile = marFile.value  // File 객체
-    tmStore.malModelFile = modelFile.value  // File 객체
-    tmStore.malMarFileName = marFile.value.name
-    tmStore.malModelFileName = modelFile.value.name
-    console.log('[MalModelParser] MAL model, langspec, and original files saved for simulation')
-
-    // 다이어그램 편집 페이지로 이동
-    const tmTitle = result.dfd.modelInfo?.title || 'MAL Model'
-    router.push({ name: 'EditDiagram', params: { title: tmTitle } })
-
+    const configuredLanguageGraph = buildConfiguredLanguageGraph(configuredAssets)
+    const diagram = createDiagramFromMalModel(parsedModel.value, configuredLanguageGraph)
+    await finishImport(diagram, configuredLanguageGraph)
   } catch (error) {
-    console.error('MAL to DFD conversion failed:', error)
-    errorMessage.value = error.message || 'Failed to convert MAL model to DFD'
+    console.error('LangGraph model to DFD conversion failed:', error)
+    errorMessage.value = error.message || 'Failed to show graph.'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * Asset Config Modal 취소
- */
 const handleAssetConfigCancel = () => {
   showAssetConfigModal.value = false
-  // 업로드 모달 다시 열기
-  if (modalInstance) {
-    modalInstance.show()
-  }
+  modalInstance?.show()
 }
 </script>
 

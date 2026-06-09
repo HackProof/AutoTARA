@@ -42,7 +42,7 @@
                   class="badge flex-shrink-0"
                   :class="session.hasAnalysis ? 'bg-success' : 'bg-warning text-dark'"
                 >
-                  {{ session.hasAnalysis ? 'Expanded' : 'Shortest Path Ready' }}
+                  {{ session.hasAnalysis ? 'Expanded' : 'Attack Path Ready' }}
                 </span>
               </div>
               <div class="small opacity-75 mt-1">
@@ -117,7 +117,7 @@
                 <div class="col-md-4">
                   <div class="small text-muted">Status</div>
                   <span class="badge" :class="selectedSessionSummary.hasAnalysis ? 'bg-success' : 'bg-warning text-dark'">
-                    {{ selectedSessionSummary.hasAnalysis ? 'Expanded' : 'Shortest Path Ready' }}
+                    {{ selectedSessionSummary.hasAnalysis ? 'Expanded' : 'Path Ready' }}
                   </span>
                 </div>
               </div>
@@ -125,7 +125,7 @@
               <div class="mb-4">
                 <details class="collapsible-section">
                   <summary class="h5 mb-0 py-1">
-                    <span>Shortest Path</span>
+                    <span>Attack Path</span>
                   </summary>
 
                   <div class="pt-3">
@@ -141,7 +141,7 @@
                       </div>
                     </div>
                     <div v-else class="text-muted small">
-                      No shortest path data available.
+                      No attack path data available.
                     </div>
                   </div>
                 </details>
@@ -252,7 +252,7 @@
               Session Assessments
             </div>
 
-            <div v-if="selectedSessionAssessmentGroups.length > 0" class="table-responsive">
+            <div v-if="selectedSessionAssessmentTableGroups.length > 0" class="table-responsive">
               <table class="table table-bordered table-hover align-middle mb-0 assessment-table">
                 <thead class="table-dark">
                   <tr>
@@ -268,7 +268,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <template v-for="group in selectedSessionAssessmentGroups" :key="group.groupKey">
+                  <template v-for="group in selectedSessionAssessmentTableGroups" :key="group.groupKey">
                     <tr
                       v-for="(row, rowIndex) in group.rows"
                       :key="row.rowKey"
@@ -443,7 +443,8 @@ const normalizedAssessments = computed(() =>
       parsed_attack_path: parsedAttackPath,
       parsed_attack_feasibility: parseAttackFeasibilityField(item.attack_feasibility),
       analysis_batch_id: parsedAttackPath?.analysis_batch_id || null,
-      generated_path_entries: extractGeneratedPathEntries(parsedAttackPath)
+      generated_path_entries: extractGeneratedPathEntries(parsedAttackPath),
+      has_generated_analysis: extractGeneratedPathEntries(parsedAttackPath).length > 0
     };
   })
 );
@@ -487,14 +488,14 @@ const sessions = computed(() => {
         targetAsset: item.target_asset,
         ciaAttribute: item.cia_attribute,
         assessmentCount: 0,
-        hasAnalysis: true,
+        hasAnalysis: item.has_generated_analysis,
         simulationResult: null
       });
     }
 
     const session = grouped.get(sessionId);
     session.assessmentCount += 1;
-    session.hasAnalysis = true;
+    session.hasAnalysis = session.hasAnalysis || item.has_generated_analysis;
     session.entryAsset = session.entryAsset || item.entry_asset;
     session.targetAsset = session.targetAsset || item.target_asset;
     session.ciaAttribute = session.ciaAttribute || item.cia_attribute;
@@ -571,7 +572,9 @@ const selectedSessionAssessmentGroups = computed(() => {
 
     const pathEntries = assessment.generated_path_entries.length > 0
       ? assessment.generated_path_entries
-      : [{
+      : assessment.parsed_attack_path?.pending_expansion
+        ? []
+        : [{
           key: `assessment_${assessment.id}`,
           label: 'Attack Path',
           value: {}
@@ -616,6 +619,15 @@ const selectedSessionAssessmentGroups = computed(() => {
       }
     }));
 });
+
+const selectedSessionAssessmentTableGroups = computed(() =>
+  selectedSessionAssessmentGroups.value
+    .filter((group) => group.rows.length > 0)
+    .map((group, index) => ({
+      ...group,
+      displayIndex: index + 1
+    }))
+);
 
 const selectedLatestAssessmentGroup = computed(() =>
   selectedSessionAssessmentGroups.value[selectedSessionAssessmentGroups.value.length - 1] || null
@@ -664,7 +676,7 @@ const scenarioLinkageCheck = computed(() =>
 );
 
 const canExpandSelectedSession = computed(() =>
-  Boolean(selectedSessionSummary.value?.simulationResult)
+  shortestPathSteps.value.length > 0
 );
 
 const isExpandingSelectedSession = computed(() =>
@@ -739,30 +751,42 @@ function extractSimulationSummary(simulationResult) {
     simulationResult?.shortest_paths ||
     null;
 
-  if (!shortestPaths?.agents) {
-    return {
-      entryAsset: null,
-      targetAsset: null,
-      steps: []
-    };
+  if (shortestPaths?.agents) {
+    for (const agentData of Object.values(shortestPaths.agents)) {
+      const entryAsset = normalizeStepLabel(agentData?.entry_points?.[0]?.full_name || agentData?.entry_points?.[0]?.name);
+      const goals = agentData?.goals || {};
+
+      for (const [goalName, goalData] of Object.entries(goals)) {
+        if (!goalData?.path_found) continue;
+
+        const targetAsset = normalizeStepLabel(goalData?.goal?.full_name || goalName);
+        const steps = normalizePathSteps(goalData?.full_path || []);
+
+        return {
+          entryAsset,
+          targetAsset,
+          steps
+        };
+      }
+    }
   }
 
-  for (const agentData of Object.values(shortestPaths.agents)) {
-    const entryAsset = normalizeStepLabel(agentData?.entry_points?.[0]?.full_name || agentData?.entry_points?.[0]?.name);
-    const goals = agentData?.goals || {};
+  const exportedAttackPath =
+    simulationResult?.attackPath ||
+    simulationResult?.rawResult?.result?.attack_path ||
+    simulationResult?.result?.attack_path ||
+    simulationResult?.attack_path ||
+    null;
 
-    for (const [goalName, goalData] of Object.entries(goals)) {
-      if (!goalData?.path_found) continue;
+  if (Array.isArray(exportedAttackPath?.paths) && exportedAttackPath.paths.length > 0) {
+    const firstPath = exportedAttackPath.paths[0];
+    const steps = normalizePathSteps(firstPath.steps || []);
 
-      const targetAsset = normalizeStepLabel(goalData?.goal?.full_name || goalName);
-      const steps = normalizePathSteps(goalData?.full_path || []);
-
-      return {
-        entryAsset,
-        targetAsset,
-        steps
-      };
-    }
+    return {
+      entryAsset: normalizeStepLabel(exportedAttackPath.entry || steps[0]?.fullStep),
+      targetAsset: normalizeStepLabel(exportedAttackPath.target || steps[steps.length - 1]?.fullStep),
+      steps
+    };
   }
 
   return {
@@ -1019,15 +1043,18 @@ function ciaBadgeClass(cia) {
 
 async function expandSelectedSessionAttackPaths() {
   const session = selectedSessionSummary.value;
-  if (!session?.simulationResult) {
-    alert('No simulation result found for this session.');
+  const attackPath = shortestPathSteps.value;
+  if (!session || attackPath.length === 0) {
+    alert('No attack path found for this session.');
     return;
   }
 
   expandingSessionId.value = session.sessionId;
 
   try {
-    await store.analyzeFromSimulation(session.sessionId, session.simulationResult);
+    await store.analyzeFromSimulation(session.sessionId, {
+      attackPath
+    });
     await store.loadAllAssessments();
   } catch (err) {
     alert(`Expansion failed: ${err.message}`);

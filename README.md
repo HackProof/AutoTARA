@@ -146,7 +146,7 @@ npm run dev
 MAL simulator:
 
 ```sh
-cd mal-simulator.server
+cd simulator.server
 pip install -r requirements.txt
 python api_server.py
 ```
@@ -166,3 +166,4 @@ The full stack is managed through the root `docker-compose.yml`.
 This project incorporates code and concepts from **[OWASP Threat Dragon](https://github.com/OWASP/threat-dragon)**.
 We thank the OWASP community for its significant contributions to open-source threat modeling tools.
 Threat Dragon is licensed under the [Apache License 2.0](https://github.com/OWASP/threat-dragon/blob/main/LICENSE).
+We also thank KTH for the **[Meta Attack Language (MAL)](https://mal-lang.org/)**, which informed the MAL-based modeling and simulation capabilities in AutoTARA.

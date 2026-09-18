@@ -11,11 +11,12 @@ class AttackStep:
     """Attack step node in the attack graph"""
     
     __slots__ = ['id', 'name', 'asset', 'type', 'ttc_dist', 'parents', 'children', 'tags',
-                 'defended_by', 'defend_success', 'local_ttc', 'completion_time', 'is_necessary']
+                 'defended_by', 'defend_success', 'local_ttc', 'completion_time', 'is_necessary',
+                 'existence_status']
     
     def __init__(self, node_id: int, name: str, asset: str, step_type: str,
                  ttc_dist: dict = None, parents: dict = None, children: dict = None,
-                 tags: list = None, is_necessary: bool = True):
+                 tags: list = None, is_necessary: bool = True, existence_status=None):
         self.id = node_id
         self.name = name
         self.asset = asset
@@ -25,6 +26,7 @@ class AttackStep:
         self.children = children or {}
         self.tags = tags or []
         self.is_necessary = is_necessary
+        self.existence_status = existence_status
         
         # Defense properties
         self.defended_by = None

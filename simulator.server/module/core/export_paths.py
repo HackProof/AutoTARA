@@ -1,16 +1,13 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import json
-import shutil
-import subprocess
-import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
 
 import yaml
-import simulator_core
 from simulator_core import AttackGraphSimulator
+from path_search import find_paths
 
 
 def load_yaml_file(yaml_file):
@@ -128,7 +125,60 @@ def node_payload(step, asset_types):
     item['hidden'] = 'hidden' in (step.tags or [])
     item['logicalType'] = step.type
     item['fullName'] = step.name
+    if step.type in {'exist', 'notexist'}:
+        item['existenceStatus'] = step.existence_status
+        item['conditionSatisfied'] = step.existence_status if step.type == 'exist' else not step.existence_status
     return item
+
+
+def build_plan_payload(primary, simulator, asset_types):
+    critical_graph = getattr(simulator, 'critical_path_graphs', {}).get(tuple(primary))
+    if critical_graph is None:
+        nodes, edges = simulator.build_attack_plan(primary)
+    else:
+        edges = {(source, target) for source, targets in critical_graph.items() for target in targets}
+        nodes = set(primary) | {ident for edge in edges for ident in edge}
+        for ident in list(nodes):
+            if simulator.attack_steps[ident].type == 'and' and ident not in simulator.entry_points:
+                for parent in simulator.attack_steps[ident].parents:
+                    if parent in simulator.exist_nodes:
+                        nodes.add(parent)
+                        edges.add((parent, ident))
+    primary_edges = set(zip(primary, primary[1:]))
+    ordered_edges = sorted(edges, key=lambda edge: tuple(map(str, edge)))
+    return {
+        'primaryPath': list(primary),
+        'nodes': {str(ident): node_payload(simulator.all_nodes[ident], asset_types)
+                  for ident in sorted(nodes, key=str)},
+        'edges': [{'from': source, 'to': target} for source, target in ordered_edges],
+        'supportNodeIds': sorted(nodes - set(primary), key=str),
+        'supportEdges': [{'from': source, 'to': target} for source, target in ordered_edges
+                         if (source, target) not in primary_edges],
+    }
+
+
+def plan_graph_paths(plans, simulator, hide_hidden):
+    """Project the union of dependency graphs for DAG output only."""
+    nodes, adjacency = set(), defaultdict(set)
+    for plan in plans.values():
+        nodes.update(item['nodeId'] for item in plan['nodes'].values())
+        for edge in plan['edges']:
+            adjacency[edge['from']].add(edge['to'])
+    visible = {ident for ident in nodes if not hide_hidden or not simulator.is_hidden_for_visualization(ident)}
+    graph_paths = [[ident] for ident in sorted(visible, key=str)]
+    for source in sorted(visible, key=str):
+        pending, visited = sorted(adjacency[source], key=str, reverse=True), set()
+        while pending:
+            target = pending.pop()
+            if target in visited:
+                continue
+            visited.add(target)
+            if target in visible:
+                if source != target:
+                    graph_paths.append([source, target])
+            else:
+                pending.extend(sorted(adjacency[target], key=str, reverse=True))
+    return graph_paths
 
 
 def build_reachable_adjacency(simulator):
@@ -139,37 +189,23 @@ def build_reachable_adjacency(simulator):
     for src_id in adjacency:
         adjacency[src_id].sort(
             key=lambda node_id: (
-                simulator.attack_steps[node_id].asset,
-                simulator.attack_steps[node_id].name,
-                node_id,
+                simulator.all_nodes[node_id].asset,
+                simulator.all_nodes[node_id].name,
+                str(node_id),
             )
         )
     return dict(adjacency)
 
 
 def enumerate_paths_from_adjacency(adjacency, entry_id, target_id, max_paths=None):
-    paths = []
-    stack = [(entry_id, [entry_id], {entry_id})]
-
-    while stack:
-        current_id, path, visited = stack.pop()
-        if current_id == target_id:
-            paths.append(path)
-            if max_paths is not None and len(paths) >= max_paths:
-                break
-            continue
-
-        for child_id in reversed(adjacency.get(current_id, [])):
-            if child_id in visited:
-                continue
-            stack.append((child_id, path + [child_id], visited | {child_id}))
-
+    paths, _ = find_paths(adjacency, entry_id, target_id, max_paths=30 if max_paths is None else max_paths)
     return paths
 
 
 def enumerate_reachable_paths(simulator, entry_id, target_id, max_paths=None):
-    adjacency = build_reachable_adjacency(simulator)
-    return enumerate_paths_from_adjacency(adjacency, entry_id, target_id, max_paths=max_paths)
+    return enumerate_paths_from_adjacency(
+        build_reachable_adjacency(simulator), entry_id, target_id, max_paths=max_paths,
+    )
 
 
 def collapse_hidden_nodes(path, simulator, hide_hidden):
@@ -216,38 +252,37 @@ def path_graph_to_adjacency(path_graph):
     return dict(adjacency)
 
 
-def select_critical_paths(simulator, entry_id, target_id, hide_hidden, iterations, max_paths=None):
+def select_critical_paths(simulator, entry_id, target_id, hide_hidden, iterations,
+                          max_paths=None, max_hops=20):
     results = simulator.run_simulation_only(iterations)
-    if not results['shortest_paths']:
-        return []
-
     path_counts = defaultdict(int)
-    ordered_paths = []
-
+    simulator.critical_path_graphs = {}
+    simulator.search_stats = {'truncated': False, 'stopReason': None,
+                              'scope': 'sampledCriticalPaths', 'maxHops': max_hops,
+                              'maxPaths': max_paths or 30}
+    deadline = time.monotonic() + 3.0
     for path_graph in results['shortest_paths']:
-        adjacency = path_graph_to_adjacency(path_graph)
-        simulation_paths = enumerate_paths_from_adjacency(adjacency, entry_id, target_id)
-        for raw_path in simulation_paths:
-            processed = collapse_hidden_nodes(raw_path, simulator, hide_hidden)
-            key = tuple(processed)
-            if not key:
-                continue
-            if key not in path_counts:
-                ordered_paths.append(processed)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            simulator.search_stats.update(truncated=True, stopReason='timeLimit')
+            break
+        paths, search = find_paths(path_graph_to_adjacency(path_graph), entry_id, target_id,
+                                   max_paths=max_paths or 30, max_hops=max_hops,
+                                   time_limit=remaining)
+        if search['truncated']:
+            simulator.search_stats.update(truncated=True, stopReason=search['stopReason'])
+        for path in paths:
+            key = tuple(path)
             path_counts[key] += 1
-
+            simulator.critical_path_graphs.setdefault(key, path_graph)
     if not path_counts:
         return []
-
     highest_frequency = max(path_counts.values())
-    selected = []
-    for path in ordered_paths:
-        key = tuple(path)
-        if path_counts[key] == highest_frequency:
-            selected.append(path)
-            if max_paths is not None and len(selected) >= max_paths:
-                break
-    return deduplicate_paths(selected)
+    paths = [list(path) for path, frequency in path_counts.items() if frequency == highest_frequency]
+    paths.sort(key=lambda path: (len(path), tuple(map(str, path))))
+    if len(paths) > (max_paths or 30):
+        simulator.search_stats.update(truncated=True, stopReason='pathLimit')
+    return paths[:max_paths or 30]
 
 
 def materialize_paths(simulator, paths, hide_hidden):
@@ -262,7 +297,7 @@ def build_linear_payload(paths, simulator, asset_types):
         path_key = f'path{path_index}'
         path_payload = {}
         for step_index, node_id in enumerate(path, start=1):
-            step = simulator.attack_steps[node_id]
+            step = simulator.all_nodes[node_id]
             item = split_attack_step(step)
             item['assetType'] = asset_types.get(step.asset, '')
             path_payload[str(step_index)] = item
@@ -278,7 +313,7 @@ def build_grouped_linear_payload(paths, simulator, asset_types):
         grouped_steps = []
 
         for node_id in path:
-            step = simulator.attack_steps[node_id]
+            step = simulator.all_nodes[node_id]
             item = split_attack_step(step)
             item['assetType'] = asset_types.get(step.asset, '')
 
@@ -325,13 +360,13 @@ def build_dag_payload(paths, simulator, asset_types):
             edges.append({'from': src_id, 'to': tgt_id})
 
     nodes = {
-        str(node_id): node_payload(simulator.attack_steps[node_id], asset_types)
+        str(node_id): node_payload(simulator.all_nodes[node_id], asset_types)
         for node_id in sorted(
             node_ids,
             key=lambda nid: (
-                simulator.attack_steps[nid].asset,
-                simulator.attack_steps[nid].name,
-                nid,
+                simulator.all_nodes[nid].asset,
+                simulator.all_nodes[nid].name,
+                str(nid),
             )
         )
     }
@@ -342,331 +377,89 @@ def build_dag_payload(paths, simulator, asset_types):
     }
 
 
-def graphviz_quote(value):
-    text = str(value)
-    return '"' + text.replace('\\', '\\\\').replace('"', '\\"').replace('\r', '').replace('\n', '\\n') + '"'
-
-
-def graphviz_node_label(step, asset_types):
-    item = split_attack_step(step)
-    label_parts = [
-        item['assetName'],
-        item['attackStep'],
-    ]
-    asset_type = asset_types.get(step.asset, '')
-    if asset_type:
-        label_parts.append(f'[{asset_type}]')
-    label_parts.append(f'id={step.id}')
-    return '\n'.join(label_parts)
-
-
-def graphviz_defense_node_id(defense_id):
-    return f'defense:{defense_id}'
-
-
-def graphviz_defense_node_label(step):
-    item = split_attack_step(step)
-    return '\n'.join([
-        item['assetName'],
-        f"#{item['attackStep']}",
-        f'id={step.id}',
-    ])
-
-
-def collect_graph_elements(paths, entry_id, target_id):
-    node_ids = []
-    seen_nodes = set()
-    edge_keys = set()
-    edges = []
-
-    for path in paths:
-        for node_id in path:
-            if node_id in seen_nodes:
-                continue
-            seen_nodes.add(node_id)
-            node_ids.append(node_id)
-
-        for src_id, tgt_id in zip(path[:-1], path[1:]):
-            edge_key = (src_id, tgt_id)
-            if edge_key in edge_keys:
-                continue
-            edge_keys.add(edge_key)
-            edges.append(edge_key)
-
-    if not node_ids:
-        for node_id in (entry_id, target_id):
-            if node_id not in seen_nodes:
-                seen_nodes.add(node_id)
-                node_ids.append(node_id)
-
-    return node_ids, edges
-
-
-def collect_defense_elements(node_ids, simulator):
-    defense_pairs = []
-    seen_pairs = set()
-
-    for node_id in node_ids:
-        step = simulator.attack_steps[node_id]
-        defense_ids = sorted(
-            [defense_id for defense_id in (step.defended_by or []) if defense_id in simulator.defense_nodes],
-            key=lambda defense_id: (
-                simulator.defense_nodes[defense_id].asset,
-                simulator.defense_nodes[defense_id].name,
-                defense_id,
-            )
-        )
-        for defense_id in defense_ids:
-            pair = (defense_id, node_id)
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
-            defense_pairs.append(pair)
-
-    return defense_pairs
-
-
-def build_graphviz_dot(paths, simulator, asset_types, entry_id, target_id, show_defenses=False):
-    node_ids, edges = collect_graph_elements(paths, entry_id, target_id)
-    defense_pairs = collect_defense_elements(node_ids, simulator) if show_defenses else []
-    lines = [
-        'digraph AttackPath {',
-        '  graph [rankdir=LR, bgcolor="white", pad="0.3", nodesep="0.5", ranksep="0.8"];',
-        '  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=10, margin="0.09,0.06"];',
-        '  edge [color="#475569", arrowsize=0.8, penwidth=1.4];',
-    ]
-
-    for node_id in node_ids:
-        step = simulator.attack_steps[node_id]
-        if node_id == entry_id:
-            fillcolor = '#dcfce7'
-            color = '#16a34a'
-            penwidth = '2.2'
-        elif node_id == target_id:
-            fillcolor = '#fee2e2'
-            color = '#dc2626'
-            penwidth = '2.2'
-        elif simulator.is_hidden_for_visualization(node_id):
-            fillcolor = '#f3f4f6'
-            color = '#6b7280'
-            penwidth = '1.0'
-        else:
-            fillcolor = '#dbeafe'
-            color = '#2563eb'
-            penwidth = '1.2'
-
-        attrs = {
-            'label': graphviz_node_label(step, asset_types),
-            'fillcolor': fillcolor,
-            'color': color,
-            'penwidth': penwidth,
-        }
-        attr_text = ', '.join(f'{key}={graphviz_quote(value)}' for key, value in attrs.items())
-        lines.append(f'  {graphviz_quote(node_id)} [{attr_text}];')
-
-    seen_defense_nodes = set()
-    for defense_id, _ in defense_pairs:
-        if defense_id in seen_defense_nodes:
-            continue
-        seen_defense_nodes.add(defense_id)
-        defense_step = simulator.defense_nodes[defense_id]
-        attrs = {
-            'label': graphviz_defense_node_label(defense_step),
-            'shape': 'diamond',
-            'style': 'filled',
-            'fillcolor': '#fef3c7',
-            'color': '#d97706',
-            'penwidth': '1.2',
-            'margin': '0.06,0.04',
-        }
-        attr_text = ', '.join(f'{key}={graphviz_quote(value)}' for key, value in attrs.items())
-        lines.append(f'  {graphviz_quote(graphviz_defense_node_id(defense_id))} [{attr_text}];')
-
-    for src_id, tgt_id in edges:
-        lines.append(f'  {graphviz_quote(src_id)} -> {graphviz_quote(tgt_id)};')
-
-    for defense_id, node_id in defense_pairs:
-        attrs = {
-            'style': 'dashed',
-            'color': '#d97706',
-            'arrowhead': 'none',
-            'penwidth': '1.1',
-        }
-        attr_text = ', '.join(f'{key}={graphviz_quote(value)}' for key, value in attrs.items())
-        lines.append(
-            f'  {graphviz_quote(graphviz_defense_node_id(defense_id))} -> '
-            f'{graphviz_quote(node_id)} [{attr_text}];'
-        )
-
-    lines.append('}')
-    return '\n'.join(lines) + '\n'
-
-
-def infer_graphviz_format(output_path, graphviz_format):
-    if graphviz_format:
-        return graphviz_format
-
-    extension = output_path.suffix.lower().lstrip('.')
-    if extension in {'png', 'svg', 'pdf', 'jpg', 'jpeg'}:
-        return 'jpg' if extension == 'jpeg' else extension
-    return 'png'
-
-
-def render_graphviz_image(
-    paths,
-    simulator,
-    asset_types,
-    entry_id,
-    target_id,
-    output_file,
-    graphviz_format=None,
-    show_defenses=False,
-):
-    dot_executable = shutil.which('dot')
-    if dot_executable is None:
-        raise RuntimeError(
-            'Graphviz "dot" executable not found. Install Graphviz and make sure dot is on PATH.'
-        )
-
-    output_path = Path(output_file)
-    if output_path.exists():
-        raise FileExistsError(f'Graphviz output already exists: {output_path}')
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_format = infer_graphviz_format(output_path, graphviz_format)
-    dot_text = build_graphviz_dot(
-        paths,
-        simulator,
-        asset_types,
-        entry_id,
-        target_id,
-        show_defenses=show_defenses,
-    )
-
-    temp_dot_path = None
-    try:
-        with tempfile.NamedTemporaryFile('w', suffix='.dot', delete=False, encoding='utf-8') as dot_file:
-            dot_file.write(dot_text)
-            temp_dot_path = Path(dot_file.name)
-
-        subprocess.run(
-            [dot_executable, f'-T{output_format}', str(temp_dot_path), '-o', str(output_path)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr.strip()
-        detail = f': {stderr}' if stderr else ''
-        raise RuntimeError(f'Graphviz failed to render {output_path}{detail}') from exc
-    finally:
-        if temp_dot_path is not None:
-            temp_dot_path.unlink(missing_ok=True)
-
-    node_ids, edges = collect_graph_elements(paths, entry_id, target_id)
-    defense_pairs = collect_defense_elements(node_ids, simulator) if show_defenses else []
-    return {
-        'output': str(output_path),
-        'format': output_format,
-        'showDefenses': show_defenses,
-        'nodeCount': len(node_ids),
-        'defenseNodeCount': len({defense_id for defense_id, _ in defense_pairs}),
-        'edgeCount': len(edges),
-        'defenseEdgeCount': len(defense_pairs),
-    }
-
-
 def export_requested_format(
-    attackgraph_file,
-    model_file,
-    entry_name,
-    target_name,
-    output_format,
-    hide_hidden,
-    path_mode,
-    critical_iterations,
-    max_paths,
-    graphviz_output=None,
-    graphviz_format=None,
-    show_defenses=False,
+    attackgraph_file, model_file, entry_name, target_name, output_format,
+    hide_hidden, path_mode, critical_iterations, max_paths,
+    max_hops=20,
 ):
     export_started_at = time.perf_counter()
-    simulator_core.print_progress_bar = lambda *args, **kwargs: None
-
+    max_paths = 30 if max_paths is None else max_paths
+    if output_format not in {'linear', 'dag'} or path_mode not in {'all', 'shortest', 'critical'}:
+        raise ValueError('Invalid output format or path mode')
+    # Validate limits even when the target is unreachable.
+    find_paths({}, 0, 1, max_paths=max_paths, max_hops=max_hops)
+    if critical_iterations <= 0:
+        raise ValueError('critical_iterations must be positive')
     simulator = AttackGraphSimulator(random_tie_breaking=True)
     simulator.load_yaml(str(attackgraph_file))
     simulator.set_entry_points([entry_name])
     simulator.set_target(target_name)
-
-    if not simulator.entry_points:
-        raise ValueError(f"Entry point '{entry_name}' not found")
-    if simulator.target is None:
-        raise ValueError(f"Target '{target_name}' not found")
-    if not simulator.find_entry_to_target_paths():
-        raise RuntimeError('No valid paths found from entry point to target')
-
-    entry_id = simulator.entry_points[0]
-    target_id = simulator.target
+    target_reachable = simulator.find_entry_to_target_paths()
+    entry_id, target_id = simulator.entry_points[0], simulator.target
     asset_types = load_asset_types(model_file)
 
-    if path_mode == 'critical':
-        selected_paths = select_critical_paths(
-            simulator,
-            entry_id,
-            target_id,
-            hide_hidden,
-            critical_iterations,
-            max_paths=max_paths,
-        )
-        raw_path_count = len(selected_paths)
+    if not target_reachable:
+        raw_paths, search = [], {
+            'truncated': False, 'stopReason': None, 'maxPaths': max_paths,
+            'maxHops': max_hops, 'scope': 'pathsWithinHopLimit',
+        }
+    elif path_mode == 'critical':
+        raw_paths = select_critical_paths(simulator, entry_id, target_id, hide_hidden,
+                                          critical_iterations, max_paths, max_hops)
+        search = simulator.search_stats
     else:
-        raw_paths = enumerate_reachable_paths(simulator, entry_id, target_id, max_paths=max_paths)
-        raw_path_count = len(raw_paths)
-        processed_paths = materialize_paths(simulator, raw_paths, hide_hidden)
-        if path_mode == 'shortest':
-            selected_paths = select_shortest_paths(processed_paths)
-        else:
-            selected_paths = processed_paths
+        raw_paths, search = find_paths(
+            build_reachable_adjacency(simulator), entry_id, target_id,
+            max_paths=max_paths, max_hops=max_hops, shortest_only=path_mode == 'shortest',
+        )
 
+    # Search/rank original steps first. Hiding/grouping is display-only and cannot
+    # turn a longer attack into the shortest path or erase AND prerequisites.
+    selected_paths, plans, seen = [], {}, set()
+    for raw_path in raw_paths:
+        displayed = collapse_hidden_nodes(raw_path, simulator, hide_hidden)
+        key = tuple(displayed)
+        if key in seen:
+            continue
+        seen.add(key)
+        selected_paths.append(displayed)
+        plans[f'path{len(selected_paths)}'] = build_plan_payload(raw_path, simulator, asset_types)
+    if not target_reachable:
+        status = 'unreachable'
+    elif selected_paths:
+        status = 'found'
+    elif search['truncated']:
+        status = 'incomplete'
+    elif path_mode == 'critical':
+        status = 'noSampledPathWithinLimits'
+    else:
+        status = 'noPathWithinHopLimit'
     target_block = {
-        'entry': entry_name,
-        'target': target_name,
+        'entry': simulator.attack_steps[entry_id].name,
+        'target': simulator.attack_steps[target_id].name,
         'options': {
-            'outputFormat': output_format,
-            'hideHidden': hide_hidden,
+            'outputFormat': output_format, 'hideHidden': hide_hidden,
             'pathMode': path_mode,
             'criticalIterations': critical_iterations if path_mode == 'critical' else None,
-            'maxPaths': max_paths,
-            'graphvizOutput': str(graphviz_output) if graphviz_output else None,
-            'graphvizFormat': graphviz_format,
-            'graphvizShowDefenses': show_defenses,
+            'maxPaths': max_paths, 'maxHops': max_hops,
         },
         'stats': {
             'reachableNodeCount': len(simulator.path_nodes),
             'reachableEdgeCount': len(simulator.path_edges),
             'returnedPathCount': len(selected_paths),
-            'rawEnumeratedPathCount': raw_path_count,
+            'rawEnumeratedPathCount': len(raw_paths),
+            'targetReachable': target_reachable, 'status': status,
+            'search': search,
         },
+        'warnings': simulator.warnings,
+        'pathDetails': plans,
     }
     target_block['stats']['exportElapsedSeconds'] = round(time.perf_counter() - export_started_at, 3)
-
     if output_format == 'dag':
-        target_block['dag'] = build_dag_payload(selected_paths, simulator, asset_types)
+        graph_paths = plan_graph_paths(plans, simulator, hide_hidden)
+        target_block['dag'] = build_dag_payload(graph_paths, simulator, asset_types)
     else:
         target_block.update(build_grouped_linear_payload(selected_paths, simulator, asset_types))
-
-    if graphviz_output:
-        target_block['graphviz'] = render_graphviz_image(
-            selected_paths,
-            simulator,
-            asset_types,
-            entry_id,
-            target_id,
-            graphviz_output,
-            graphviz_format=graphviz_format,
-            show_defenses=show_defenses,
-        )
-
     return {'AttackPath': target_block}
 
 
@@ -674,12 +467,12 @@ def main():
     tool_started_at = time.perf_counter()
     parser = argparse.ArgumentParser(
         usage=(
-            '%(prog)s SCENARIO_FILE [--show-defenses] [options]\n'
-            '       %(prog)s ATTACKGRAPH_FILE MODEL_FILE --entry ENTRY --target TARGET --output OUTPUT [--show-defenses] [options]'
+            '%(prog)s SCENARIO_FILE [options]\n'
+            '       %(prog)s ATTACKGRAPH_FILE MODEL_FILE --entry ENTRY --target TARGET --output OUTPUT [options]'
         ),
         description=(
             'Export Entry->Target paths. In scenario mode, entry, target, model_file, '
-            'JSON output, and Graphviz PDF output are derived automatically.'
+            'and JSON output are derived automatically.'
         ),
         epilog=(
             'Scenario mode defaults:\n'
@@ -687,11 +480,8 @@ def main():
             '  target: first agents.*.goals item from SCENARIO_FILE\n'
             '  model: model_file from SCENARIO_FILE\n'
             '  output: <lang>_path_result.json, or <lang>_path_result(2).json if it exists\n'
-            '  graphviz: <lang>_graph.pdf, or <lang>_graph(2).pdf if it exists\n'
-            '  defenses: hidden by default; use --show-defenses to include them in Graphviz output\n\n'
             'Examples:\n'
             '  %(prog)s AI_Lang-0.0.1_scenario.yml\n'
-            '  %(prog)s AI_Lang-0.0.1_scenario.yml --show-defenses\n'
             '  %(prog)s AI_Lang-0.0.1_scenario.yml --path-mode shortest\n'
             '  %(prog)s logs/attackgraph.yml AI_Lang_v0.0.1_model.yml --entry AIUser:validAccount --target llamaCPP:externalHarms --output result.json'
         ),
@@ -707,15 +497,8 @@ def main():
     parser.add_argument('--hide-hidden', action='store_true')
     parser.add_argument('--path-mode', choices=['all', 'shortest', 'critical'], default='all')
     parser.add_argument('--critical-iterations', type=int, default=1000)
-    parser.add_argument('--max-paths', type=int)
-    parser.add_argument('--graphviz-output', help='Image path to render selected Entry->Target paths with Graphviz')
-    parser.add_argument('--no-graphviz-output', action='store_true', help='Disable Graphviz rendering')
-    parser.add_argument('--graphviz-format', choices=['png', 'svg', 'pdf', 'jpg'], help='Graphviz render format; defaults to output extension or pdf in scenario mode')
-    defense_group = parser.add_mutually_exclusive_group()
-    defense_group.add_argument('--show-defenses', dest='show_defenses', action='store_true', help='Show defense nodes in Graphviz output')
-    defense_group.add_argument('--show-defneses', dest='show_defenses', action='store_true', help=argparse.SUPPRESS)
-    defense_group.add_argument('--no-show-defenses', dest='show_defenses', action='store_false', help=argparse.SUPPRESS)
-    parser.set_defaults(show_defenses=False)
+    parser.add_argument('--max-paths', type=int, default=30, help='Maximum primary paths (default: 30)')
+    parser.add_argument('--max-hops', type=int, default=20, help='Maximum primary edges before hiding/grouping (default: 20)')
     args = parser.parse_args()
 
     if args.model_file is None:
@@ -728,10 +511,6 @@ def main():
         entry = config['entry']
         target = config['target']
         output_path = unique_output_path(args.output or f"{config['lang_name']}_path_result.json")
-        graphviz_format = args.graphviz_format or 'pdf'
-        graphviz_output = None
-        if not args.no_graphviz_output:
-            graphviz_output = unique_output_path(args.graphviz_output or f"{config['lang_name']}_graph.pdf")
     else:
         missing = [
             name for name, value in (
@@ -751,14 +530,6 @@ def main():
         entry = args.entry
         target = args.target
         output_path = unique_output_path(args.output)
-        graphviz_format = args.graphviz_format
-        graphviz_output = None
-        if not args.no_graphviz_output:
-            if args.graphviz_output:
-                graphviz_output = unique_output_path(args.graphviz_output)
-            else:
-                graphviz_output = unique_output_path(output_path.with_name(f'{output_path.stem}_graph.pdf'))
-                graphviz_format = graphviz_format or 'pdf'
 
     payload = export_requested_format(
         attackgraph_file,
@@ -770,9 +541,7 @@ def main():
         args.path_mode,
         args.critical_iterations,
         args.max_paths,
-        graphviz_output=graphviz_output,
-        graphviz_format=graphviz_format,
-        show_defenses=args.show_defenses,
+        max_hops=args.max_hops,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -780,8 +549,6 @@ def main():
         output_file.write(json.dumps(payload, indent=2, ensure_ascii=False))
     tool_elapsed = time.perf_counter() - tool_started_at
     print(f'Wrote {output_path} (elapsed: {tool_elapsed:.3f}s)')
-    if graphviz_output:
-        print(f'Wrote {Path(graphviz_output)}')
 
 
 if __name__ == '__main__':

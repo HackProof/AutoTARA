@@ -30,13 +30,16 @@ APP_DIR = Path(__file__).resolve().parent
 MODULE_DIR = APP_DIR / "module" if (APP_DIR / "module" / "maltoolbox").exists() else APP_DIR
 CORE_DIR = MODULE_DIR / "core" if (MODULE_DIR / "core").exists() else APP_DIR / "core"
 EXPORT_PATHS_SCRIPT = CORE_DIR / "export_paths.py"
+if str(CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_DIR))
+from graph_loader import load_graph
+
 WORK_DIR = Path(os.environ.get("MALSIM_WORK_DIR", "/tmp/autotara/mal-simulator"))
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_ARTIFACTS = {
     "attackgraph.yml",
     "attack_paths.json",
-    "attack_paths.pdf",
     "model.json",
     "langGraph.json",
     "simulation.log",
@@ -295,12 +298,12 @@ def split_step(full_step: str) -> dict[str, str]:
 
 
 def summarize_attack_graph(attackgraph_path: Path) -> dict[str, Any]:
-    data = load_yaml(attackgraph_path)
-    attack_steps = data.get("attack_steps") or {}
+    attack_steps, normalized_edges, warnings = load_graph(attackgraph_path)
     nodes = []
-    edges = []
+    edges = [{"from": source, "to": target} for source, target in normalized_edges]
 
-    for full_name, step_data in attack_steps.items():
+    for step_data in attack_steps.values():
+        full_name = step_data["full_name"]
         node_id = step_data.get("id")
         nodes.append(
             {
@@ -312,16 +315,18 @@ def summarize_attack_graph(attackgraph_path: Path) -> dict[str, Any]:
                 "tags": step_data.get("tags") or [],
             }
         )
-        for child_id in (step_data.get("children") or {}).keys():
-            edges.append({"from": node_id, "to": int(child_id)})
 
+    visible_nodes = nodes[:500]
+    visible_ids = {node["id"] for node in visible_nodes}
+    visible_edges = [edge for edge in edges if edge["from"] in visible_ids and edge["to"] in visible_ids][:1000]
     return {
         "artifact": "attackgraph.yml",
         "nodeCount": len(nodes),
         "edgeCount": len(edges),
-        "nodes": nodes[:500],
-        "edges": edges[:1000],
-        "truncated": len(nodes) > 500 or len(edges) > 1000,
+        "nodes": visible_nodes,
+        "edges": visible_edges,
+        "truncated": len(nodes) > len(visible_nodes) or len(edges) > len(visible_edges),
+        "warnings": warnings,
     }
 
 
@@ -329,9 +334,9 @@ def normalize_linear_attack_paths(path_result: dict[str, Any]) -> list[dict[str,
     attack_path = path_result.get("AttackPath") or {}
     paths = []
 
-    for key, value in sorted(attack_path.items()):
-        if not str(key).startswith("path") or not isinstance(value, dict):
-            continue
+    path_items = [(str(key), value) for key, value in attack_path.items()
+                  if str(key).startswith("path") and str(key)[4:].isdigit() and isinstance(value, dict)]
+    for key, value in sorted(path_items, key=lambda item: int(item[0][4:])):
 
         ordered_steps = []
         for step_index, step_value in sorted(
@@ -357,6 +362,7 @@ def normalize_linear_attack_paths(path_result: dict[str, Any]) -> list[dict[str,
                 "key": str(key),
                 "label": f"Attack Path {len(paths) + 1}",
                 "steps": ordered_steps,
+                "details": (attack_path.get("pathDetails") or {}).get(key),
             }
         )
 
@@ -377,6 +383,18 @@ def build_shortest_paths_compat(entry: str, target: str, paths: list[dict[str, A
         }
         for index, step in enumerate(paths[0]["steps"])
     ]
+    details = paths[0].get("details")
+    if details:
+        full_path = [
+            {
+                "id": ident,
+                "name": details["nodes"][str(ident)]["attackStep"],
+                "full_name": details["nodes"][str(ident)]["fullName"],
+                "type": details["nodes"][str(ident)]["logicalType"],
+                "step": index + 1,
+            }
+            for index, ident in enumerate(details["primaryPath"])
+        ]
 
     return {
         "available": True,
@@ -386,24 +404,25 @@ def build_shortest_paths_compat(entry: str, target: str, paths: list[dict[str, A
             "Attacker": {
                 "entry_points": [
                     {
-                        "id": 1,
+                        "id": full_path[0]["id"],
                         "name": split_step(entry)["attackStep"],
                         "full_name": entry,
-                        "type": "or",
+                        "type": full_path[0]["type"],
                     }
                 ],
                 "goals": {
                     target: {
                         "path_found": True,
                         "goal": {
-                            "id": len(full_path),
+                            "id": full_path[-1]["id"],
                             "name": split_step(target)["attackStep"],
                             "full_name": target,
-                            "type": "or",
+                            "type": full_path[-1]["type"],
                         },
                         "path": full_path[1:] if len(full_path) > 1 else full_path,
                         "full_path": full_path,
                         "total_ttc": None,
+                        "details": details,
                     }
                 },
             }
@@ -438,12 +457,13 @@ def run_attack_path_task(
     lang_graph_path: Path,
     entry: str,
     target: str,
+    max_paths: int = 30,
+    max_hops: int = 20,
 ) -> None:
     session_dir = WORK_DIR / session_id
     log_file = session_dir / "simulation.log"
     attackgraph_path = session_dir / "logs" / "attackgraph.yml"
     attack_paths_json = session_dir / "attack_paths.json"
-    attack_paths_pdf = session_dir / "attack_paths.pdf"
 
     try:
         simulation_results[session_id]["status"] = SimulationStatus.RUNNING
@@ -475,12 +495,12 @@ def run_attack_path_task(
                 entry,
                 "--target",
                 target,
+                "--max-paths",
+                str(max_paths),
+                "--max-hops",
+                str(max_hops),
                 "--output",
                 str(attack_paths_json),
-                "--graphviz-output",
-                str(attack_paths_pdf),
-                "--graphviz-format",
-                "pdf",
             ],
             cwd=session_dir,
             log_file=log_file,
@@ -490,6 +510,7 @@ def run_attack_path_task(
         paths = normalize_linear_attack_paths(path_result)
         attack_graph = summarize_attack_graph(attackgraph_path)
         attack_path_found = len(paths) > 0
+        path_block = path_result.get("AttackPath") or {}
 
         result = {
             "attack_path_found": attack_path_found,
@@ -502,14 +523,14 @@ def run_attack_path_task(
                 "entry": entry,
                 "target": target,
                 "paths": paths,
+                "stats": path_block.get("stats", {}),
+                "warnings": path_block.get("warnings", []),
                 "raw": path_result,
                 "jsonArtifact": "attack_paths.json",
-                "pdfArtifact": "attack_paths.pdf" if attack_paths_pdf.exists() else None,
             },
             "artifacts": {
                 "attackGraph": "attackgraph.yml",
                 "attackPathJson": "attack_paths.json",
-                "attackPathPdf": "attack_paths.pdf" if attack_paths_pdf.exists() else None,
             },
         }
 
@@ -573,6 +594,8 @@ async def run_simulation_file(
     lang_graph_file: UploadFile | None = File(None),
     langGraph: UploadFile | None = File(None),
     lang_file: UploadFile | None = File(None),
+    maxPaths: int = Form(30, ge=1),
+    maxHops: int = Form(20, ge=0),
 ):
     session_id = str(uuid.uuid4())
     created_at = now_iso()
@@ -620,6 +643,8 @@ async def run_simulation_file(
         lang_graph_path,
         entryPoint,
         goal,
+        max_paths=maxPaths,
+        max_hops=maxHops,
     )
 
     return SimulationResponse(
@@ -639,6 +664,8 @@ async def calculate_shortest_path(
     lang_graph_file: UploadFile | None = File(None),
     langGraph: UploadFile | None = File(None),
     lang_file: UploadFile | None = File(None),
+    maxPaths: int = Form(30, ge=1),
+    maxHops: int = Form(20, ge=0),
 ):
     response = await run_simulation_file(
         background_tasks,
@@ -648,6 +675,8 @@ async def calculate_shortest_path(
         lang_graph_file=lang_graph_file,
         langGraph=langGraph,
         lang_file=lang_file,
+        maxPaths=maxPaths,
+        maxHops=maxHops,
     )
     return response.model_dump()
 
@@ -700,8 +729,6 @@ async def get_simulation_artifact(session_id: str, artifact_name: str):
         media_type = "application/json"
     elif artifact_path.suffix in {".yml", ".yaml"}:
         media_type = "application/x-yaml"
-    elif artifact_path.suffix == ".pdf":
-        media_type = "application/pdf"
 
     return FileResponse(
         artifact_path,

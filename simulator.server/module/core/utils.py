@@ -79,7 +79,7 @@ def print_version():
 
 def print_help():
     """Print help information"""
-    print("Usage: sim [attackgraph.yml path] [entry point count] [entry points...] [target] [iterations] [options]")
+    print("Usage: sim [attackgraph.yml path] [entry point count] [entry points...] [target] [iterations]")
     print()
     print("Arguments:")
     print("  attackgraph.yml     Path to the attack graph YAML file")
@@ -89,20 +89,12 @@ def print_help():
     print("  iterations          Number of simulation iterations")
     print()
     print("Options:")
-    print("  -h, --hide-hidden   Hide nodes with 'hidden' tag in visualization")
-    print("  -a, --allpaths      Generate allpaths.png (default: only critical_paths.png)")
     print("  --help              Show this help message")
     print("  --version           Show version information")
     print()
     print("Examples:")
     print("  sim graph.yml 1 EntryPoint Target 1000")
-    print("  sim graph.yml 2 EP1 EP2 Target 5000 -h")
-    print("  sim graph.yml 1 Entry Target 1000 -a -h")
-    print()
-    print("Output files:")
-    print("  critical_paths.png  Critical attack paths visualization (always generated)")
-    print("  allpaths.png        All possible paths (with -a option)")
-    print("  global_ttc.png      Time-to-compromise distribution (always generated)")
+    print("  sim graph.yml 2 EP1 EP2 Target 5000")
 
 
 def handle_error(error: Exception, exit_code: int = 1):

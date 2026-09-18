@@ -1,444 +1,277 @@
 #!/usr/bin/env python3
-"""
-Core simulation logic for Meta Attack Language Attack Graph Simulator
-"""
+"""MAL reachability and time-to-compromise simulation."""
 
-import yaml
-import numpy as np
-import random
 import heapq
+import random
 import time
-from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from collections import defaultdict, deque
+from itertools import count
+
+import numpy as np
 
 from attack_step import AttackStep
+from graph_loader import load_graph, node_id
 from utils import print_progress_bar
 
 
 class AttackGraphSimulator:
-    """Core attack graph simulator"""
-    
     def __init__(self, random_tie_breaking=True):
-        # Core data structures
-        self.attack_steps: Dict[int, AttackStep] = {}
-        self.entry_points: List[int] = []
-        self.target: int = None
-        self.path_nodes: Set[int] = set()
-        self.path_edges: Set[Tuple[int, int]] = set()
-        
-        # Additional data structures
-        self.defense_nodes: Dict[int, AttackStep] = {}
-        self.exist_nodes: Dict[int, AttackStep] = {}
-        
-        # Random tie-breaking option
         self.random_tie_breaking = random_tie_breaking
-        
-    def load_yaml(self, yaml_file: str):
-        """Load attack graph from YAML file"""
-        with open(yaml_file, 'r', encoding='utf-8') as file:
-            data = yaml.safe_load(file)
-        
-        attack_steps_data = data.get('attack_steps', {})
         self.attack_steps = {}
-        
-        # Create all attack step nodes
-        for step_name, step_data in attack_steps_data.items():
-            node_id = step_data.get('id')
-            if node_id is None:
-                continue
-            
-            step_type = step_data.get('type')
-            
-            # Parse relationships efficiently
-            parents = {}
-            children = {}
-            
-            for k, v in step_data.get('parents', {}).items():
-                try:
-                    parents[int(k)] = v
-                except (ValueError, TypeError):
-                    continue
-                    
-            for k, v in step_data.get('children', {}).items():
-                try:
-                    children[int(k)] = v
-                except (ValueError, TypeError):
-                    continue
-            
-            # Parse is_necessary field
-            is_necessary = step_data.get('is_necessary', 'True') == 'True'
-            
-            attack_step = AttackStep(
-                node_id=node_id,
-                name=step_name,
-                asset=step_data.get('asset', ''),
-                step_type=step_type,
-                ttc_dist=step_data.get('ttc'),
-                parents=parents,
-                children=children,
-                tags=step_data.get('tags', []),
-                is_necessary=is_necessary
+        self.defense_nodes = {}
+        self.exist_nodes = {}
+        self.all_nodes = {}
+        self.entry_points = []
+        self.target = None
+        self.path_nodes = set()
+        self.path_edges = set()
+        self.reachable_nodes = set()
+        self.witness = {}
+        self.warnings = []
+        self.critical_path_graphs = {}
+        self.search_stats = {}
+
+    def load_yaml(self, yaml_file):
+        records, _, warnings = load_graph(yaml_file)
+        self.__init__(self.random_tie_breaking)
+        self.warnings = warnings
+        for ident, record in records.items():
+            step = AttackStep(
+                node_id=ident, name=record['full_name'], asset=record['asset'],
+                step_type=record['type'], ttc_dist=record.get('ttc'),
+                parents=record['parents'], children=record['children'],
+                tags=record.get('tags', []), is_necessary=record['is_necessary'],
+                existence_status=record.get('existence_status'),
             )
-            
-            # Categorize nodes
-            if step_type in {'and', 'or'}:
-                self.attack_steps[node_id] = attack_step
-            elif step_type == 'defense':
-                attack_step.defend_success = float(step_data.get('defense_status', '0.0'))
-                self.defense_nodes[node_id] = attack_step
-            elif step_type in {'exist', 'notExist', 'notExists'}:
-                attack_step.defend_success = step_data.get('existence_status', 'False') == 'True'
-                self.exist_nodes[node_id] = attack_step
-        
-        # Process defense and exist information
-        self._process_defense_and_exist_nodes()
-
-    def _process_defense_and_exist_nodes(self):
-        """Process defense and exist nodes to set attack step properties"""
-        # Process defense nodes
-        for def_id, def_step in self.defense_nodes.items():
-            defense_prob = def_step.defend_success
-            for child_id in def_step.children:
+            self.all_nodes[ident] = step
+            if step.type in {'and', 'or'}:
+                self.attack_steps[ident] = step
+            elif step.type == 'defense':
+                step.defend_success = record['defense_status']
+                self.defense_nodes[ident] = step
+            else:
+                self.exist_nodes[ident] = step
+        for ident, defense in self.defense_nodes.items():
+            for child_id in defense.children:
                 if child_id in self.attack_steps:
-                    step = self.attack_steps[child_id]
-                    if step.defended_by is None:
-                        step.defended_by = []
-                        step.defend_success = 0.0
-                    step.defended_by.append(def_id)
-                    step.defend_success = min(step.defend_success + defense_prob, 1.0)
-        
-        # Process exist nodes - remove attack steps if existence condition is False
-        for exist_id, exist_step in self.exist_nodes.items():
-            if not exist_step.defend_success:  # existence_status is False
-                children_to_remove = []
-                for child_id in exist_step.children:
-                    if child_id in self.attack_steps:
-                        children_to_remove.append(child_id)
-                
-                for child_id in children_to_remove:
-                    del self.attack_steps[child_id]
+                    child = self.attack_steps[child_id]
+                    if child.defended_by is None:
+                        child.defended_by = []
+                    child.defended_by.append(ident)
 
-    def set_entry_points(self, entry_point_names: List[str]):
-        """Set entry points"""
-        name_to_id = {step.name: step_id for step_id, step in self.attack_steps.items()}
-        self.entry_points = [name_to_id[name] for name in entry_point_names if name in name_to_id]
+    def resolve_endpoint(self, value):
+        exact = [ident for ident, step in self.attack_steps.items() if step.name == value]
+        if exact:
+            return exact[0]
+        ident = node_id(value)
+        if ident not in self.attack_steps:
+            raise ValueError(f'Unknown attack endpoint: {value!r}. Use a full Asset:step name or ID')
+        return ident
 
-    def set_target(self, target_name: str):
-        """Set target node"""
-        for step_id, step in self.attack_steps.items():
-            if step.name == target_name:
-                self.target = step_id
-                return
-        raise ValueError(f"Target '{target_name}' not found")
+    def set_entry_points(self, entry_point_names):
+        if not entry_point_names:
+            raise ValueError('At least one entry point is required')
+        self.entry_points = list(dict.fromkeys(self.resolve_endpoint(name) for name in entry_point_names))
+
+    def set_target(self, target_name):
+        self.target = self.resolve_endpoint(target_name)
+
+    def condition_satisfied(self, ident):
+        step = self.exist_nodes[ident]
+        return step.existence_status if step.type == 'exist' else not step.existence_status
+
+    def analyze_reachability(self):
+        """Least fixed point, matching the viewer's AND/OR prerequisite rules.
+
+        Entries are already acquired. Defense nodes never seed attacker actions;
+        a certain defense blocks even an Entry. Fractional defenses are sampled
+        only in critical mode, so static paths mean potentially reachable paths.
+        """
+        blocked = {
+            child for defense in self.defense_nodes.values()
+            if defense.defend_success == 1.0 for child in defense.children
+        }
+        reachable = set(self.entry_points) - blocked
+        queue = deque(ident for ident in self.entry_points if ident in reachable)
+        witness = {ident: [] for ident in queue}
+        attack_parents = {
+            ident: [parent for parent in step.parents if parent in self.attack_steps]
+            for ident, step in self.attack_steps.items()
+        }
+        remaining = {ident: len(parents) for ident, parents in attack_parents.items()}
+        conditions_met = {
+            ident: all(self.condition_satisfied(parent) for parent in step.parents if parent in self.exist_nodes)
+            for ident, step in self.attack_steps.items()
+        }
+        while queue:
+            current = queue.popleft()
+            for child in self.attack_steps[current].children:
+                if child not in self.attack_steps:
+                    continue
+                remaining[child] -= 1
+                if child in reachable or child in blocked:
+                    continue
+                if self.attack_steps[child].type == 'and':
+                    if remaining[child] or not conditions_met[child]:
+                        continue
+                    parents = attack_parents[child]
+                else:
+                    parents = [current]
+                reachable.add(child)
+                witness[child] = parents
+                queue.append(child)
+        self.reachable_nodes, self.witness = reachable, witness
+        return reachable
 
     def find_entry_to_target_paths(self):
-        """Find all paths from entry points to target"""
-        print("Building all paths")
-        
-        all_path_nodes = set()
-        total_entries = len(self.entry_points)
-        
-        for idx, entry_id in enumerate(self.entry_points):
-            print_progress_bar(idx, total_entries, prefix='  Progress:', 
-                             suffix=f'Processing entry {entry_id}')
-            entry_nodes = self._dfs_forward_to_target(entry_id, set(), 0)
-            all_path_nodes.update(entry_nodes)
-        
-        # Complete the progress bar
-        print_progress_bar(total_entries, total_entries, prefix='  Progress:', 
-                         suffix='Complete')
-        print()  # New line after progress bar
-        
-        if self.target not in all_path_nodes:
-            print("  Target not reachable from entry points!")
+        """Prune to reachable ancestors of Target without enumerating all paths."""
+        self.path_nodes, self.path_edges = set(), set()
+        if not self.entry_points or self.target is None:
+            raise ValueError('Set Entry and Target before finding paths')
+        reachable = self.analyze_reachability()
+        if self.target not in reachable:
             return False
-        
-        # Build edges only between path nodes
-        self.path_nodes = all_path_nodes
-        self._build_path_edges()
-        
+        pending = [self.target]
+        while pending:
+            ident = pending.pop()
+            if ident in self.path_nodes:
+                continue
+            self.path_nodes.add(ident)
+            pending.extend(
+                parent for parent in self.attack_steps[ident].parents
+                if parent in reachable and parent != self.target
+            )
+        self.path_edges = {
+            (ident, child) for ident in self.path_nodes if ident != self.target
+            for child in self.attack_steps[ident].children if child in self.path_nodes
+        }
         return True
 
-    def _dfs_forward_to_target(self, current_id: int, visited: Set[int], depth: int) -> Set[int]:
-        """Forward-only DFS to find nodes on paths to target"""
-        if current_id in visited or current_id not in self.attack_steps:
-            return set()
-        
-        # TARGET REACHED - STOP HERE, DO NOT EXPLORE FURTHER
-        if current_id == self.target:
-            return {current_id}  # Return ONLY target, no further exploration
-        
-        visited.add(current_id)
-        result_nodes = set()
-        step = self.attack_steps[current_id]
-        
-        # Get valid children
-        valid_children = [cid for cid in step.children if cid in self.attack_steps]
-        
-        # DFS to children
-        for child_id in valid_children:
-            child_result = self._dfs_forward_to_target(child_id, visited.copy(), depth + 1)
-            if child_result:  # Child can reach target
-                result_nodes.add(current_id)  # Include current node
-                result_nodes.update(child_result)  # Include child path
-        
-        return result_nodes
+    def build_attack_plan(self, primary):
+        """Expand AND prerequisites using finite Entry-rooted witness branches.
 
-    def _build_path_edges(self):
-        """Build edges between path nodes - NO EDGES FROM TARGET"""
-        self.path_edges = set()
-        for node_id in self.path_nodes:
-            # CRITICAL: Skip target completely - target has NO outgoing edges
-            if node_id == self.target:
+        The primary chain remains separate: a dependency branch is not another
+        independent way to satisfy an AND node. Conditions are retained as nodes.
+        """
+        nodes = set(primary)
+        edges = set(zip(primary, primary[1:]))
+        entries = set(self.entry_points)
+        primary_index = {ident: index for index, ident in enumerate(primary)}
+        pending = [(ident, False) for ident in primary if self.attack_steps[ident].type == 'and']
+        expanded = set()
+        while pending:
+            ident, support = pending.pop()
+            if ident in expanded or ident in entries:
                 continue
-                
-            if node_id in self.attack_steps:
-                step = self.attack_steps[node_id]
-                for child_id in step.children:
-                    if child_id in self.path_nodes and child_id not in self.entry_points:
-                        self.path_edges.add((node_id, child_id))
+            expanded.add(ident)
+            step = self.all_nodes[ident]
+            if step.type == 'and':
+                for parent in step.parents:
+                    if parent in self.defense_nodes:
+                        continue
+                    nodes.add(parent)
+                    edges.add((parent, ident))
+                    # Earlier primary steps already have their selected route.
+                    # Only missing/later prerequisites need a witness branch.
+                    if parent in self.attack_steps and (
+                        parent not in primary_index or
+                        primary_index[parent] >= primary_index.get(ident, float('inf'))
+                    ):
+                        pending.append((parent, True))
+            if support:
+                for parent in self.witness.get(ident, []):
+                    nodes.add(parent)
+                    edges.add((parent, ident))
+                    if parent not in primary_index:
+                        pending.append((parent, True))
+        return nodes, edges
 
     def simulate_iteration(self):
-        """Single simulation iteration"""
-        # Sample TTC for path nodes
+        # Sample each defense once, sharing its state across all protected steps.
+        blocked = {
+            child for defense in self.defense_nodes.values()
+            if np.random.random() < defense.defend_success for child in defense.children
+        }
         valid_nodes = {}
-        for node_id in self.path_nodes:
-            step = self.attack_steps[node_id]
-            
-            if node_id in self.entry_points:
-                step.local_ttc = 0.0
-            else:
-                step.local_ttc = step.sample_ttc()
-                # Apply defense
-                if (step.defended_by is not None and step.defend_success is not None and
-                    np.random.random() < step.defend_success):
-                    step.local_ttc = np.inf
-            
-            if step.local_ttc != np.inf:
-                valid_nodes[node_id] = step
-        
+        for ident in self.path_nodes:
+            step = self.attack_steps[ident]
+            step.local_ttc = 0.0 if ident in self.entry_points else step.sample_ttc()
+            if ident not in blocked and np.isfinite(step.local_ttc):
+                valid_nodes[ident] = step
         return self._event_simulation(valid_nodes) if self.target in valid_nodes else (None, np.inf)
 
-    def _event_simulation(self, valid_nodes: Dict[int, AttackStep]):
-        """Event-driven simulation with optional random tie-breaking"""
-        events = []
-        completion_times = {}
-        selected_parents = {}
-        
-        # Initialize entry points
-        for entry_id in self.entry_points:
-            if entry_id in valid_nodes:
-                if self.random_tie_breaking:
-                    # Add random component for tie-breaking
-                    random_component = random.random()
-                    heapq.heappush(events, (0.0, random_component, entry_id))
-                else:
-                    # Original deterministic behavior
-                    heapq.heappush(events, (0.0, entry_id))
-                completion_times[entry_id] = 0.0
-                selected_parents[entry_id] = []
-        
-        # Pre-compute attack parents with is_necessary information
-        attack_parents = {}
-        necessary_parents = {}
-        for nid in self.path_nodes:
-            if nid in self.attack_steps:
-                all_parents = [pid for pid in self.attack_steps[nid].parents 
-                              if pid in self.attack_steps]
-                necessary_only = [pid for pid in all_parents 
-                                 if self.attack_steps[pid].is_necessary]
-                attack_parents[nid] = all_parents
-                necessary_parents[nid] = necessary_only
-        
-        # Process events
+    def _event_simulation(self, valid_nodes):
+        events, completed, selected_parents = [], {}, {}
+        scheduled = set()
+        sequence = count()
+
+        def schedule(ident, when, parents):
+            tie = random.random() if self.random_tie_breaking else 0.0
+            heapq.heappush(events, (when, tie, next(sequence), ident))
+            scheduled.add(ident)
+            selected_parents[ident] = parents
+
+        for ident in self.entry_points:
+            if ident in valid_nodes:
+                schedule(ident, 0.0, [])
         while events:
-            if self.random_tie_breaking:
-                current_time, _, node_id = heapq.heappop(events)
-            else:
-                current_time, node_id = heapq.heappop(events)
-            
-            if node_id == self.target:
+            current_time, _, _, ident = heapq.heappop(events)
+            # A scheduled event is not completed until it is popped. Otherwise a
+            # slow OR parent can incorrectly win over an earlier unfinished route.
+            completed[ident] = current_time
+            if ident == self.target:
                 return self._build_final_path(selected_parents), current_time
-            
-            # Process children
-            step = self.attack_steps[node_id]
-            for child_id in step.children:
-                if ((node_id, child_id) not in self.path_edges or 
-                    child_id not in valid_nodes or child_id in completion_times):
+            for child in self.attack_steps[ident].children:
+                if (ident, child) not in self.path_edges or child not in valid_nodes or child in scheduled:
                     continue
-                
-                child_step = valid_nodes[child_id]
-                can_start, start_time, parents = self._check_start_condition(
-                    child_id, completion_times, attack_parents[child_id], 
-                    necessary_parents[child_id], child_step.type)
-                
-                if can_start:
-                    completion_time = start_time + child_step.local_ttc
-                    if self.random_tie_breaking:
-                        # Add random component for tie-breaking
-                        random_component = random.random()
-                        heapq.heappush(events, (completion_time, random_component, child_id))
-                    else:
-                        # Original deterministic behavior
-                        heapq.heappush(events, (completion_time, child_id))
-                    completion_times[child_id] = completion_time
-                    selected_parents[child_id] = parents
-        
+                step = valid_nodes[child]
+                parents = [parent for parent in step.parents if parent in self.attack_steps]
+                done = [parent for parent in parents if parent in completed]
+                if step.type == 'and':
+                    if len(done) != len(parents) or not all(
+                        self.condition_satisfied(parent) for parent in step.parents if parent in self.exist_nodes
+                    ):
+                        continue
+                    start, chosen = max(completed[parent] for parent in done), done
+                else:
+                    start = min(completed[parent] for parent in done)
+                    candidates = [parent for parent in done if completed[parent] == start]
+                    chosen = [random.choice(candidates) if self.random_tie_breaking else candidates[0]]
+                schedule(child, start + step.local_ttc, chosen)
         return None, np.inf
 
-    def _check_start_condition(self, node_id: int, completion_times: Dict[int, float], 
-                              all_parents: List[int], necessary_parents: List[int], node_type: str):
-        """Check if node can start based on AND/OR logic with is_necessary consideration"""
-        completed_parents = [(completion_times[pid], pid) for pid in all_parents 
-                           if pid in completion_times]
-        completed_necessary = [(completion_times[pid], pid) for pid in necessary_parents 
-                             if pid in completion_times]
-        
-        if not completed_parents:
-            return False, 0, []
-        
-        if node_type == 'and':
-            # For AND nodes: all necessary parents must be completed
-            if len(completed_necessary) < len(necessary_parents):
-                return False, 0, []
-            
-            # Start time is the maximum completion time among all completed parents
-            start_time = max(time for time, _ in completed_parents)
-            
-            # Return all completed parents (both necessary and non-necessary)
-            return True, start_time, [pid for _, pid in completed_parents]
-        else:  # OR
-            if self.random_tie_breaking:
-                # OR 노드에서도 동일한 시간의 부모들 중 랜덤 선택
-                earliest_time = min(time for time, _ in completed_parents)
-                earliest_parents = [pid for time, pid in completed_parents if time == earliest_time]
-                if len(earliest_parents) > 1:
-                    # 동일한 시간의 부모가 여러 개면 랜덤 선택
-                    earliest_parent = random.choice(earliest_parents)
-                else:
-                    earliest_parent = earliest_parents[0]
-                return True, earliest_time, [earliest_parent]
-            else:
-                # Original deterministic behavior
-                earliest_time, earliest_parent = min(completed_parents)
-                return True, earliest_time, [earliest_parent]
-
-    def _build_final_path(self, selected_parents: Dict[int, List[int]]) -> Dict[int, List[int]]:
-        """Build final path graph"""
-        final_graph = defaultdict(list)
-        stack = [self.target]
-        visited = set()
-        
-        while stack:
-            node_id = stack.pop()
-            if node_id in visited:
+    def _build_final_path(self, selected_parents):
+        graph, visited, pending = defaultdict(list), set(), [self.target]
+        while pending:
+            ident = pending.pop()
+            if ident in visited:
                 continue
-            visited.add(node_id)
-            
-            if node_id in selected_parents:
-                for parent_id in selected_parents[node_id]:
-                    final_graph[parent_id].append(node_id)
-                    stack.append(parent_id)
-        
-        return dict(final_graph)
+            visited.add(ident)
+            for parent in selected_parents.get(ident, []):
+                graph[parent].append(ident)
+                pending.append(parent)
+        return dict(graph)
 
-    def run_simulation_only(self, iterations: int):
-        """Run only the simulation part (path finding already done)"""
-        print("Starting simulation")
-        
-        # Run simulation
-        shortest_paths = []
-        global_ttcs = []
-        edge_counts = defaultdict(int)
-        
-        start_time = time.time()
-        for i in range(iterations):
-            # Update progress bar every 1% or every 100 iterations, whichever is more frequent
-            update_frequency = max(1, min(100, iterations // 100))
-            if i % update_frequency == 0 or i == iterations - 1:
-                elapsed = time.time() - start_time
-                if elapsed > 0:
-                    rate = (i + 1) / elapsed
-                    eta = (iterations - i - 1) / rate if rate > 0 else 0
-                    suffix = f'({i+1}/{iterations}) ETA: {eta:.0f}s'
-                else:
-                    suffix = f'({i+1}/{iterations})'
-                print_progress_bar(i + 1, iterations, prefix='  Progress:', suffix=suffix)
-                
+    def run_simulation_only(self, iterations):
+        if iterations <= 0:
+            raise ValueError('iterations must be positive')
+        shortest_paths, global_ttcs, edge_counts = [], [], defaultdict(int)
+        started = time.monotonic()
+        for index in range(iterations):
+            if index % max(1, min(100, iterations // 100)) == 0 or index == iterations - 1:
+                print_progress_bar(index + 1, iterations, prefix='  Progress:',
+                                   suffix=f'elapsed: {time.monotonic() - started:.1f}s')
             path_graph, global_ttc = self.simulate_iteration()
-            
-            if path_graph is not None and global_ttc != np.inf:
+            if path_graph is not None and np.isfinite(global_ttc):
                 shortest_paths.append(path_graph)
                 global_ttcs.append(global_ttc)
-                
-                for src, targets in path_graph.items():
-                    for tgt in targets:
-                        edge_counts[(src, tgt)] += 1
-        
-        print()  # New line after progress bar
-        
-        success_rate = len(shortest_paths) / iterations * 100
-        print(f"  Success: {len(shortest_paths)}/{iterations} ({success_rate:.1f}%)")
-        
-        return {
-            'shortest_paths': shortest_paths,
-            'global_ttcs': global_ttcs,
-            'edge_counts': edge_counts,
-            'success_rate': success_rate
-        }
-        """Run the simulation and return results"""
-        if not self.find_entry_to_target_paths():
-            raise RuntimeError("No valid paths found from entry points to target")
-        
-        print("Starting simulation")
-        
-        # Run simulation
-        shortest_paths = []
-        global_ttcs = []
-        edge_counts = defaultdict(int)
-        
-        start_time = time.time()
-        for i in range(iterations):
-            # Update progress bar every 1% or every 100 iterations, whichever is more frequent
-            update_frequency = max(1, min(100, iterations // 100))
-            if i % update_frequency == 0 or i == iterations - 1:
-                elapsed = time.time() - start_time
-                if elapsed > 0:
-                    rate = (i + 1) / elapsed
-                    eta = (iterations - i - 1) / rate if rate > 0 else 0
-                    suffix = f'({i+1}/{iterations}) ETA: {eta:.0f}s'
-                else:
-                    suffix = f'({i+1}/{iterations})'
-                print_progress_bar(i + 1, iterations, prefix='  Progress:', suffix=suffix)
-                
-            path_graph, global_ttc = self.simulate_iteration()
-            
-            if path_graph is not None and global_ttc != np.inf:
-                shortest_paths.append(path_graph)
-                global_ttcs.append(global_ttc)
-                
-                for src, targets in path_graph.items():
-                    for tgt in targets:
-                        edge_counts[(src, tgt)] += 1
-        
-        print()  # New line after progress bar
-        
-        success_rate = len(shortest_paths) / iterations * 100
-        print(f"  Success: {len(shortest_paths)}/{iterations} ({success_rate:.1f}%)")
-        
-        return {
-            'shortest_paths': shortest_paths,
-            'global_ttcs': global_ttcs,
-            'edge_counts': edge_counts,
-            'success_rate': success_rate
-        }
+                for source, targets in path_graph.items():
+                    for target in targets:
+                        edge_counts[source, target] += 1
+        return {'shortest_paths': shortest_paths, 'global_ttcs': global_ttcs,
+                'edge_counts': edge_counts, 'success_rate': len(shortest_paths) / iterations * 100}
 
-    def is_hidden_for_visualization(self, node_id: int) -> bool:
-        """Check if a node should be hidden in visualization"""
-        # Entry points and target are never hidden
-        if node_id in self.entry_points or node_id == self.target:
+    def is_hidden_for_visualization(self, ident):
+        if ident in self.entry_points or ident == self.target:
             return False
-        # Other nodes are hidden if they have the 'hidden' tag
-        if node_id in self.attack_steps:
-            return 'hidden' in self.attack_steps[node_id].tags
-        return False
+        return ident in self.all_nodes and 'hidden' in self.all_nodes[ident].tags

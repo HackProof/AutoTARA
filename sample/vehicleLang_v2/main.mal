@@ -17,5 +17,5 @@
 #id: "org.mal-lang.vehicleLang"
 #version: "2.0.1"
 
-include "../coreLang/coreLang.mal"
+include "coreLang/coreLang.mal"
 include "vehicleLang.mal"

@@ -1,0 +1,11 @@
+lang_file: ./vehicleLang_v2/main.mal
+model_file: ./Tesla_Model_S_Model.yaml
+
+agents:
+  Attacker:
+    type: attacker
+    entry_points:
+      - "QtCarBrowser:localConnect"
+    agent_class: BreadthFirstAttacker
+    goals:
+      - "PT-CAN:messageInjection"

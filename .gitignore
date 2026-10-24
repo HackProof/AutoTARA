@@ -1,4 +1,5 @@
 /.idea/
+**/.env
 
 /tara.server/node_modules/
 /tara.server/.idea/
@@ -12,3 +13,6 @@
 /simulator.server/test/malsim/
 
 /sample/logs/
+
+/db/backups
+/db/README.md

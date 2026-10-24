@@ -1,23 +1,32 @@
+name: autotara
+
 services:
   db:
-    image: postgres:17
-    container_name: tara-pg17
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autotara-postgres:18.6
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: passwd2026
-      POSTGRES_DB: tara_db
-      TZ: Asia/Seoul
+      POSTGRES_DB: ${POSTGRES_DB:-autotara}
+      POSTGRES_USER: ${POSTGRES_USER:-autotara_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotara_dev_password}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./init:/docker-entrypoint-initdb.d:ro
-      - ./data:/data:ro
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d $${POSTGRES_DB}"]
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          && psql -X -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc
+          'SELECT 1 FROM vehicle_lang.v_attack_step_catalog LIMIT 1' | grep -qx 1
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 20
+      start_period: 15s
 
 volumes:
-  pgdata:
+  postgres_data:

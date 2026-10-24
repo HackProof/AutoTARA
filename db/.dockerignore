@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!data/
+!data/**/
+!data/**/*.csv
+!data/*.csv
+!sql/
+!sql/*.sql
+!scripts/
+!scripts/init-db.sh

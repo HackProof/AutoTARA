@@ -1,0 +1,75 @@
+attack_method_id,part,table_id,table_description,mitigation_id,mitigation
+4.1,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+4.2,B,B1,Vehicle communication channels,M11,"Security controls shall be implemented for storing cryptographic keys (e.g., use of Hardware Security Modules)"
+5.1,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+5.1,B,B1,Vehicle communication channels,M6,Systems shall implement security by design to minimize risks
+5.2,B,B1,Vehicle communication channels,M7,Access control techniques and designs shall be applied to protect system data/code
+5.3,B,B1,Vehicle communication channels,M7,Access control techniques and designs shall be applied to protect system data/code
+5.4,B,B1,Vehicle communication channels,M7,Access control techniques and designs shall be applied to protect system data/code
+21.1,B,B1,Vehicle communication channels,M7,Access control techniques and designs shall be applied to protect system data/code
+5.5,B,B1,Vehicle communication channels,M7,Access control techniques and designs shall be applied to protect system data/code
+6.1,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+6.2,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+6.3,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+7.1,B,B1,Vehicle communication channels,M12,Confidential data transmitted to or from the vehicle shall be protected
+7.2,B,B1,Vehicle communication channels,M8,Through system design and access control it should not be possible for unauthorized personnel to access personal or system critical data. Example of Security Controls can be found in OWASP
+8.1,B,B1,Vehicle communication channels,M13,Measures to detect and recover from a denial of service attack shall be employed
+8.2,B,B1,Vehicle communication channels,M13,Measures to detect and recover from a denial of service attack shall be employed
+9.1,B,B1,Vehicle communication channels,M9,Measures to prevent and detect unauthorized access shall be employed
+10.1,B,B1,Vehicle communication channels,M14,Measures to protect systems against embedded viruses/malware should be considered
+11.1,B,B1,Vehicle communication channels,M15,Measures to detect malicious internal messages or activity should be considered
+11.2,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+11.3,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+11.4,B,B1,Vehicle communication channels,M10,The vehicle shall verify the authenticity and integrity of messages it receives
+12.1,B,B2,Update process,M16,Secure software update procedures shall be employed
+12.2,B,B2,Update process,M16,Secure software update procedures shall be employed
+12.3,B,B2,Update process,M16,Secure software update procedures shall be employed
+12.4,B,B2,Update process,M11,Security controls shall be implemented for storing cryptographic keys
+13.1,B,B2,Update process,M3,Security Controls shall be applied to back-end systems. Where back-end servers are critical to the provision of services there are recovery measures in case of system outage. Example Security Controls can be found in OWASP
+15.1,B,B3,Unintended human actions facilitating a cyber attack,M18,"Measures shall be implemented for defining and controlling user roles and access privileges, based on the principle of least access privilege"
+15.2,B,B3,Unintended human actions facilitating a cyber attack,M19,Organizations shall ensure security procedures are defined and followed including logging of actions and access related to the management of the security functions
+16.1,B,B4,External connectivity and connections,M20,Security controls shall be applied to systems that have remote access
+16.2,B,B4,External connectivity and connections,M20,Security controls shall be applied to systems that have remote access
+16.3,B,B4,External connectivity and connections,M20,Security controls shall be applied to systems that have remote access
+17.1,B,B4,External connectivity and connections,M21,"Software shall be security assessed, authenticated and integrity protected. Security controls shall be applied to minimise the risk from third party software that is intended or foreseeable to be hosted on the vehicle"
+18.1,B,B4,External connectivity and connections,M22,Security controls shall be applied to external interfaces
+18.2,B,B4,External connectivity and connections,M22,Security controls shall be applied to external interfaces
+18.3,B,B4,External connectivity and connections,M22,Security controls shall be applied to external interfaces
+19.1,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP
+19.2,B,B5,"Potential targets of, or motivations for, an attack",M8,Through system design and access control it should not be possible for unauthorized personnel to access personal or system critical data. Examples of Security Controls can be found in OWASP
+19.3,B,B5,"Potential targets of, or motivations for, an attack",M11,Security controls shall be implemented for storing cryptographic keys e.g. Security Modules
+20.1,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP
+20.2,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP
+20.3,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP. Data manipulation attacks on sensors or transmitted data could be mitigated by correlating the data from different sources of information
+20.4,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP. Data manipulation attacks on sensors or transmitted data could be mitigated by correlating the data from different sources of information
+20.5,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP. Data manipulation attacks on sensors or transmitted data could be mitigated by correlating the data from different sources of information
+21.1,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP.
+22.2,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP.
+23.1,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP.
+24.1,B,B5,"Potential targets of, or motivations for, an attack",M13,Measures to detect and recover from a denial of service attack shall be employed
+25.1,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP
+25.2,B,B5,"Potential targets of, or motivations for, an attack",M7,Access control techniques and designs shall be applied to protect system data/code. Example Security Controls can be found in OWASP
+26.1,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed
+26.2,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed
+26.3,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed
+27.1,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed
+28.1,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed. Cybersecurity testing with adequate coverage
+28.2,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed. Cybersecurity testing with adequate coverage
+29.1,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed. Cybersecurity testing with adequate coverage
+29.2,B,B6,Potential vulnerabilities that could be exploited if not sufficiently protected or hardened,M23,Cybersecurity best practices for software and hardware development shall be followed. Cybersecurity best practices for system design and system integration shall be followed
+31.1,B,B7,Data loss / data breach from vehicle,M24,Best practices for the protection of data integrity and confidentiality shall be followed for storing personal data.
+32.1,B,B8,Physical manipulation of systems to enable an attack,M9,Measures to prevent and detect unauthorized access shall be employed
+1.1,C,C1,Back-end servers,M1,Security Controls are applied to back-end systems to minimise the risk of insider attack
+3.1,C,C1,Back-end servers,M1,Security Controls are applied to back-end systems to minimise the risk of insider attack
+1.2,C,C1,Back-end servers,M2,Security Controls are applied to back-end systems to minimise unauthorised access. Example Security Controls can be found in OWASP
+3.3,C,C1,Back-end servers,M2,Security Controls are applied to back-end systems to minimise unauthorised access. Example Security Controls can be found in OWASP
+1.3,C,C1,Back-end servers,M8,Through system design and access control it should not be possible for unauthorised personnel to access personal or system critical data
+3.4,C,C1,Back-end servers,M8,Through system design and access control it should not be possible for unauthorised personnel to access personal or system critical data
+2.1,C,C1,Back-end servers,M3,Security Controls are applied to back-end systems. Where back-end servers are critical to the provision of services there are recovery measures in case of system outage. Example Security Controls can be found in OWASP
+3.2,C,C1,Back-end servers,M4,Security Controls are applied to minimise risks associated with cloud computing. Example Security Controls can be found in OWASP and NCSC cloud computing guidance
+3.5,C,C1,Back-end servers,M5,Security Controls are applied to back-end systems to prevent data breaches. Example Security Controls can be found in OWASP
+15.1,C,C2,Unintended human actions,M18,"Measures shall be implemented for defining and controlling user roles and access privileges, based on the principle of least access privilege"
+15.2,C,C2,Unintended human actions,M19,Organizations shall ensure security procedures are defined and followed including logging of actions and access related to the management of the security functions
+30.1,C,C3,Physical loss of data,M24,Best practices for the protection of data integrity and confidentiality shall be followed for storing personal data. Example Security Controls can be found in ISO/SC27/WG5
+30.2,C,C3,Physical loss of data,M24,Best practices for the protection of data integrity and confidentiality shall be followed for storing personal data. Example Security Controls can be found in ISO/SC27/WG5
+30.3,C,C3,Physical loss of data,M24,Best practices for the protection of data integrity and confidentiality shall be followed for storing personal data. Example Security Controls can be found in ISO/SC27/WG5

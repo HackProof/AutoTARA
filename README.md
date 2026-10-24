@@ -163,7 +163,4 @@ The full stack is managed through the root `docker-compose.yml`.
 
 ## 👏 Acknowledgements
 
-This project incorporates code and concepts from **[OWASP Threat Dragon](https://github.com/OWASP/threat-dragon)**.
-We thank the OWASP community for its significant contributions to open-source threat modeling tools.
-Threat Dragon is licensed under the [Apache License 2.0](https://github.com/OWASP/threat-dragon/blob/main/LICENSE).
-We also thank KTH for the **[Meta Attack Language (MAL)](https://mal-lang.org/)**, which informed the MAL-based modeling and simulation capabilities in AutoTARA.
+We thank KTH for the **[Meta Attack Language (MAL)](https://mal-lang.org/)**, which informed the MAL-based modeling and simulation capabilities in AutoTARA.

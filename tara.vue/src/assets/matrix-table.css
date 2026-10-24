@@ -1,0 +1,36 @@
+.matrix-table-container {
+  max-height: 55dvh;
+}
+
+.matrix-table {
+  font-size: 0.875rem;
+}
+
+.matrix-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8f9fa;
+}
+
+.av-id-column {
+  min-width: 100px;
+  max-width: 140px;
+  overflow-wrap: anywhere;
+}
+
+.vector-column {
+  min-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.cart-column {
+  min-width: 150px;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.matrix-hit {
+  background-color: var(--bs-primary-bg-subtle);
+  font-weight: 600;
+}

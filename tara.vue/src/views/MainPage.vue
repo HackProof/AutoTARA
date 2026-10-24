@@ -1,61 +1,73 @@
-<template>
-  <div class="px-4 my-5 text-center border-bottom">
-    <img class="d-block mx-auto" src="../assets/auto-tara-logo-2.png" alt="" width="256">
-    <h1 class="display-4 fw-bold text-body-emphasis">
-      AutoTARA
-    </h1>
-    <h2 class="display-6 fw-bold text-body-emphasis">
-      Automated Threat Analysis and Risk Assessment Simulator
-    </h2>
-    <div class="col-lg-6 mx-auto">
-      <p class="lead mb-4">
-        <b>AutoTARA</b> revolutionizes threat modeling by automating the end-to-end TARA framework.
-        Built on a customizable, <b>MITRE ATT&CK-powered catalog</b>, it moves beyond static analysis to identify
-        vulnerabilities in Automotive environments. Visualize complex attack simulations,
-        automatically prioritize threats, and calculate optimal remediation strategies to find the
-        fastest path to compromise before attackers do.
-      </p>
-      <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mb-5">
-        <!-- <ThreatModelParser /> -->
-        <MalModelParser />
-        <button class="btn btn-outline-secondary btn-lg px-4" @click="openCreateDiagramModal">
-          <i class="fa-solid fa-plus"></i>
-          New Diagram
-        </button>
-        <!-- <router-link to="/dashboard" class="btn btn-outline-primary btn-lg px-4">
-          <i class="fa-solid fa-chart-line"></i>
-          Dashboard
-        </router-link> -->
-      </div>
-    </div>
-    <div class="overflow-hidden" style="max-height: 45vh">
-      <div class="container px-5">
-        <img
-            src="../assets/diagram-sample.png"
-            class="img-fluid border rounded-3 shadow-lg mb-4"
-            alt="Example image"
-            width="1200"
-            loading="lazy"
-        />
-      </div>
-    </div>
-  </div>
-  <div>
-    <CreateDiagramModal ref="createModal" />
-  </div>
-</template>
-
 <script setup>
 import { ref } from 'vue'
 import CreateDiagramModal from '@/components/CreateDiagramModal.vue'
-import ThreatModelParser from '@/components/ThreatModelParser.vue'
-import MalModelParser from '@/components/MalModelParser.vue'
+import logoUrl from '@/assets/auto-tara-logo.png'
+import diagramSampleUrl from '@/assets/diagram-sample.png'
 
 const createModal = ref(null)
-
-const openCreateDiagramModal = () => {
-  if (createModal.value) {
-    createModal.value.openModal()
-  }
-}
 </script>
+
+<template>
+  <section class="main-page px-3 px-sm-4 pt-4 pt-sm-5 text-center border-bottom">
+    <div class="container">
+      <img class="main-page-logo d-block mx-auto" :src="logoUrl" alt="AutoTARA logo" />
+      <h1 class="display-4 fw-bold text-body-emphasis">AutoTARA</h1>
+      <h2 class="display-6 fw-bold text-body-emphasis">
+        Automated Threat Analysis and Risk Assessment
+      </h2>
+
+      <div class="col-lg-8 col-xl-6 mx-auto">
+        <p class="lead mt-4 mb-4">
+          Model automotive systems, identify threats, and assess cybersecurity risks with AutoTARA.
+          Create asset and data-flow diagrams, evaluate attack steps, and compare countermeasures to
+          prioritize security improvements.
+        </p>
+
+        <div
+          class="d-grid gap-2 d-sm-flex flex-sm-wrap justify-content-sm-center mb-5"
+          role="group"
+          aria-label="Diagram actions"
+        >
+          <button v-if="false" type="button" class="btn btn-success btn-lg px-4" disabled>
+            Open Diagram Model
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-lg px-4"
+            @click="createModal?.openModal()"
+          >
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            New Diagram
+          </button>
+        </div>
+        <p v-if="false" id="diagram-actions-status" class="small text-body-secondary mt-3 mb-5">
+          Diagram model open is coming soon.
+        </p>
+      </div>
+
+      <div class="diagram-preview overflow-hidden mx-auto">
+        <img
+          :src="diagramSampleUrl"
+          class="img-fluid border rounded-3 shadow-lg"
+          alt="Example AutoTARA automotive threat model with connected assets and data flows"
+          width="1200"
+          loading="lazy"
+        />
+      </div>
+    </div>
+  </section>
+  <CreateDiagramModal ref="createModal" />
+</template>
+
+<style scoped>
+.main-page-logo {
+  width: 256px;
+  max-width: 60vw;
+  height: auto;
+}
+
+.diagram-preview {
+  max-width: 1200px;
+  max-height: 45vh;
+}
+</style>

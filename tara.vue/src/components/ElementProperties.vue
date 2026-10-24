@@ -1,193 +1,121 @@
-<template>
-  <div class="card shadow-sm">
-    <div class="card-header bg-white border-bottom-0 pt-3 pb-2 d-flex align-items-center">
-      <i class="fas fa-sliders-h text-primary me-2"></i>
-      <span class="fw-bold">Properties</span>
-    </div>
-
-    <div class="card-body">
-      <div v-if="!cellRef" class="h-100 d-flex flex-column align-items-center justify-content-center text-muted opacity-75">
-        <p class="small text-center mb-0">
-          Select an element on the diagram<br>to edit its properties.
-        </p>
-      </div>
-
-      <div v-else>
-        <div v-if="vehicleLangAssetName" class="mb-3">
-          <label class="form-label small fw-bold text-uppercase text-muted">
-            MAL Asset
-          </label>
-          <input
-              :value="vehicleLangAssetName"
-              type="text"
-              class="form-control form-control-sm bg-light"
-              readonly
-          >
-        </div>
-
-        <div class="mb-3">
-          <label for="name" class="form-label small fw-bold text-uppercase text-muted">
-            Asset Name
-          </label>
-          <input
-              v-model="assetName"
-              type="text"
-              class="form-control form-control-sm fw-bold"
-              id="name"
-              placeholder="Enter asset name..."
-          >
-        </div>
-
-        <div class="mb-3">
-          <label for="description" class="form-label small fw-bold text-uppercase text-muted">
-            Description
-          </label>
-          <textarea
-              v-model="description"
-              class="form-control form-control-sm"
-              id="description"
-              placeholder="Describe the function or role of this asset..."
-              rows="4"
-              style="resize: none;"
-          ></textarea>
-        </div>
-
-        <hr class="text-muted my-4 opacity-25">
-
-        <div class="mb-3">
-          <div class="form-check form-switch d-flex justify-content-between align-items-center ps-0">
-            <label class="form-check-label small fw-bold text-dark" for="outOfScopeSwitch">
-              Out of Scope
-            </label>
-            <input
-                class="form-check-input ms-2"
-                type="checkbox"
-                role="switch"
-                id="outOfScopeSwitch"
-                v-model="outOfScope"
-                style="cursor: pointer;"
-            >
-          </div>
-          <div class="form-text small" v-if="!outOfScope">
-            Enable this if the asset is excluded from analysis.
-          </div>
-        </div>
-
-        <div v-if="outOfScope" class="bg-light p-3 rounded border">
-          <label for="outOfScopeReason" class="form-label small fw-bold text-danger">
-            <i class="fas fa-exclamation-circle me-1"></i>Reason for Exclusion
-          </label>
-          <textarea
-              v-model="reasonOutOfScope"
-              class="form-control form-control-sm"
-              id="outOfScopeReason"
-              placeholder="Why is this asset out of scope?"
-              rows="3"
-          ></textarea>
-        </div>
-
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup>
-import { ref, watch } from 'vue' // computed 대신 ref, watch 사용
-import { useCellStore } from "@/stores/cellStore.js";
-import { storeToRefs } from 'pinia';
-import dataChanged from '@/service/x6/graph/data-changed.js';
+import { ref } from 'vue'
+import { assetShapes } from '@/services/drawio/palette.js'
 
-const cellStore = useCellStore();
-const { ref: cellRef } = storeToRefs(cellStore);
+const props = defineProps({
+  selectedElement: { type: Object, default: null },
+  disabled: { type: Boolean, default: false },
+})
+const emit = defineEmits(['update-properties'])
+const nameInput = ref(null)
+const descriptionInput = ref(null)
 
-const assetName = ref('');
-const vehicleLangAssetName = ref('');
-const description = ref('');
-const outOfScope = ref(false);
-const reasonOutOfScope = ref('');
+function flushChanges() {
+  const selected = props.selectedElement
+  if (!selected || props.disabled) return
+  const changes = {}
+  if (nameInput.value && nameInput.value.value !== selected.label)
+    changes.label = nameInput.value.value
+  if (descriptionInput.value && descriptionInput.value.value !== selected.description)
+    changes.description = descriptionInput.value.value
+  if (Object.keys(changes).length) emit('update-properties', selected.id, changes)
+}
+defineExpose({ flushChanges })
 
-watch(cellRef, (newCell) => {
-  if (newCell && cellRef.value.data) {
-    assetName.value = cellRef.value.data.name || '';
-    vehicleLangAssetName.value = cellRef.value.data.malInfo?.assetType || '';
-    description.value = cellRef.value.data.description || '';
-    outOfScope.value = cellRef.value.data.outOfScope || false;
-    reasonOutOfScope.value = cellRef.value.data.reasonOutOfScope || '';
-  } else {
-    assetName.value = '';
-    vehicleLangAssetName.value = '';
-    description.value = '';
-    outOfScope.value = false;
-    reasonOutOfScope.value = '';
+function updateProperty(name, event) {
+  if (props.selectedElement && !props.disabled) {
+    emit('update-properties', props.selectedElement.id, { [name]: event.target.value })
   }
-}, { immediate: true });
-
-watch(assetName, (val) => {
-  if (!cellRef.value) return;
-  cellStore.updateData({ name: val }, 'ElementProperties.vue');
-  cellRef.value.attr('label/text', val); // 라벨 시각적 변경
-});
-
-const syncFromCell = () => {
-  if (cellRef.value && cellRef.value.getData) {
-    const data = cellRef.value.getData(); // 최신 데이터 가져오기
-
-    // 로컬 변수 업데이트 -> 화면이 즉시 바뀜
-    assetName.value = data.name || '';
-    vehicleLangAssetName.value = data.malInfo?.assetType || '';
-    description.value = data.description || '';
-    outOfScope.value = data.outOfScope || false;
-    reasonOutOfScope.value = data.reasonOutOfScope || '';
-
-    // console.log('🔄 화면 갱신됨:', data.description); // 확인용 로그
-  }
-};
-
-watch(cellRef, (newCell, oldCell) => {
-
-  // (중요) 이전에 선택했던 셀의 리스너 제거 (안 하면 메모리 새고 버그 생김)
-  if (oldCell) {
-    oldCell.off('change:data', syncFromCell);
-  }
-
-  if (newCell) {
-    // ① 선택하자마자 현재 데이터로 한 번 채우기
-    syncFromCell();
-
-    // ② [핵심] "앞으로 이 셀의 데이터가 변하면(API 응답 등) syncFromCell을 실행해라!" 라고 등록
-    newCell.on('change:data', syncFromCell);
-
-  } else {
-    // 선택 해제 시 초기화
-    assetName.value = '';
-    vehicleLangAssetName.value = '';
-    description.value = '';
-    outOfScope.value = false;
-    reasonOutOfScope.value = '';
-  }
-}, { immediate: true });
-
-
-
-watch(description, (val) => {
-  if (!cellRef.value) return;
-  cellStore.updateData({ description: val }, 'ElementProperties.vue');
-});
-
-watch(outOfScope, (val) => {
-  if (!cellRef.value) return;
-  cellStore.updateData({ outOfScope: val }, 'ElementProperties.vue');
-  dataChanged.updateStyleAttrs(cellRef.value);
-});
-
-// 3-4. Reason 변경 감지
-watch(reasonOutOfScope, (val) => {
-  if (!cellRef.value) return;
-  cellStore.updateData({ reasonOutOfScope: val }, 'ElementProperties.vue');
-});
-
+}
 </script>
 
-<style scoped>
-
-</style>
+<template>
+  <section class="card shadow-sm flex-shrink-0" aria-labelledby="element-properties-title">
+    <div class="card-header bg-white border-bottom-0 pt-3 pb-2">
+      <h2 id="element-properties-title" class="fs-6 fw-bold mb-0">
+        <i class="fa-solid fa-sliders text-primary me-2" aria-hidden="true"></i>Properties
+      </h2>
+    </div>
+    <div class="card-body">
+      <div v-if="selectedElement" :key="selectedElement.id">
+        <div class="mb-3">
+          <label for="asset-name" class="form-label small fw-semibold">
+            {{ selectedElement.isEdge ? 'Data Flow Name' : 'Asset Name' }}
+          </label>
+          <input
+            v-if="!selectedElement.association"
+            ref="nameInput"
+            id="asset-name"
+            type="text"
+            class="form-control form-control-sm"
+            :value="selectedElement.label"
+            :disabled="disabled"
+            @change="updateProperty('label', $event)"
+            @keydown.enter="$event.target.blur()"
+          />
+          <template v-else>
+            <select
+              id="asset-name"
+              class="form-select form-select-sm"
+              :value="selectedElement.association.id"
+              :disabled="disabled || !selectedElement.association.options.length"
+              aria-describedby="data-flow-association-help"
+              @change="updateProperty('associationId', $event)"
+            >
+              <option value="" disabled>Select an association…</option>
+              <option
+                v-for="option in selectedElement.association.options"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.name }}: {{ option.sourceField }} → {{ option.targetField }}
+              </option>
+            </select>
+            <p id="data-flow-association-help" class="form-text small mb-0">
+              <template v-if="selectedElement.association.options.length">
+                Association for {{ selectedElement.association.sourceLabel }} →
+                {{ selectedElement.association.targetLabel }}. This name and relationship are used
+                for MAL export.
+              </template>
+              <template v-else
+                >No association is available. Connect two compatible MAL assets.</template
+              >
+            </p>
+          </template>
+        </div>
+        <div v-if="selectedElement.dfdShape" class="mb-3">
+          <label for="asset-type" class="form-label small fw-semibold">Asset Type</label>
+          <select
+            id="asset-type"
+            class="form-select form-select-sm"
+            :value="selectedElement.dfdShape"
+            :disabled="disabled"
+            @change="updateProperty('dfdShape', $event)"
+          >
+            <option v-for="shape in assetShapes" :key="shape.id" :value="shape.id">
+              {{ shape.label }}
+            </option>
+          </select>
+        </div>
+        <div :class="selectedElement.assetType ? 'mb-3' : ''">
+          <label for="asset-description" class="form-label small fw-semibold">Description</label>
+          <textarea
+            ref="descriptionInput"
+            id="asset-description"
+            class="form-control form-control-sm"
+            rows="5"
+            :value="selectedElement.description"
+            :disabled="disabled"
+            @change="updateProperty('description', $event)"
+          ></textarea>
+        </div>
+        <p v-if="selectedElement.assetType" class="small text-muted text-break mb-0">
+          MAL Asset: {{ selectedElement.assetType }}
+        </p>
+      </div>
+      <p v-else class="small text-center text-muted opacity-75 mb-0">
+        Select an element in the diagram<br />to edit its properties.
+      </p>
+    </div>
+  </section>
+</template>

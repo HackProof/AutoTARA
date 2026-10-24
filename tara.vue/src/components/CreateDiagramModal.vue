@@ -1,319 +1,256 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { Modal } from 'bootstrap'
+import { useRouter } from 'vue-router'
+import { parseLanguageGraph } from '@/services/languageGraph.js'
+import { useThreatModelStore } from '@/stores/threatModelStore.js'
+import LangSchemaSelect from '@/components/LangSchemaSelect.vue'
+
+const router = useRouter()
+const tmStore = useThreatModelStore()
+const modalElement = ref(null)
+const titleInput = ref(null)
+const languageGraphInput = ref(null)
+const schemaSelect = ref(null)
+const selectedFileName = ref('')
+const form = reactive({
+  title: 'New Diagram',
+  version: '',
+  description: '',
+  threatCatalogSchema: '',
+})
+const languageGraphDocument = ref(null)
+const errorMessage = ref('')
+const isReading = ref(false)
+const isCreating = ref(false)
+let modalInstance
+let triggerElement
+let fileRequest = 0
+
+const assetCount = computed(
+  () =>
+    languageGraphDocument.value?.languageGraph.assets.filter((asset) => !asset.isAbstract).length,
+)
+const canCreate = computed(
+  () => form.title.trim() && !errorMessage.value && !isReading.value && !isCreating.value,
+)
+
+function focusTitle() {
+  titleInput.value?.focus()
+  titleInput.value?.select()
+}
+
+function handleHidden() {
+  fileRequest += 1
+  isReading.value = false
+  triggerElement?.focus()
+}
+
+function openModal() {
+  fileRequest += 1
+  Object.assign(form, {
+    title: 'New Diagram',
+    version: '',
+    description: '',
+    threatCatalogSchema: '',
+  })
+  languageGraphDocument.value = null
+  selectedFileName.value = ''
+  languageGraphInput.value.value = ''
+  errorMessage.value = ''
+  isReading.value = false
+  isCreating.value = false
+  triggerElement = document.activeElement
+  modalInstance.show()
+  schemaSelect.value?.refresh()
+}
+
+async function handleLanguageGraphSelected(event) {
+  const request = ++fileRequest
+  const file = event.target.files?.[0]
+  selectedFileName.value = file?.name || ''
+  languageGraphDocument.value = null
+  errorMessage.value = ''
+  isReading.value = Boolean(file)
+  if (!file) return
+
+  try {
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      throw new Error('Select a MAL LangGraph JSON file (.json).')
+    }
+    const content = await file.text()
+    if (request !== fileRequest) return
+    const parsed = parseLanguageGraph(content, file.name)
+    languageGraphDocument.value = parsed
+    if (!form.version) {
+      form.version = String(parsed.languageGraph.metadata.version || '')
+    }
+  } catch (error) {
+    if (request !== fileRequest) return
+    errorMessage.value = error.message || 'Failed to read the MAL LangGraph file.'
+  } finally {
+    if (request === fileRequest) isReading.value = false
+  }
+}
+
+function clearLanguageGraph() {
+  fileRequest += 1
+  languageGraphDocument.value = null
+  selectedFileName.value = ''
+  languageGraphInput.value.value = ''
+  errorMessage.value = ''
+  isReading.value = false
+}
+
+async function createDiagram() {
+  if (!canCreate.value) return
+  isCreating.value = true
+  try {
+    tmStore.createDiagram(form, languageGraphDocument.value)
+    // The modal has no fade transition, so its backdrop and focus trap close before navigation.
+    modalInstance.hide()
+    await router.push({ name: 'EditDiagram', params: { title: tmStore.data.modelInfo.title } })
+  } catch (error) {
+    errorMessage.value = error.message || 'Failed to create the diagram.'
+    modalInstance.show()
+  } finally {
+    isCreating.value = false
+  }
+}
+
+onMounted(() => {
+  modalInstance = new Modal(modalElement.value)
+  modalElement.value.addEventListener('shown.bs.modal', focusTitle)
+  modalElement.value.addEventListener('hidden.bs.modal', handleHidden)
+})
+
+onBeforeUnmount(() => {
+  fileRequest += 1
+  modalElement.value.removeEventListener('shown.bs.modal', focusTitle)
+  modalElement.value.removeEventListener('hidden.bs.modal', handleHidden)
+  modalInstance?.hide()
+  modalInstance?.dispose()
+})
+
+defineExpose({ openModal })
+</script>
+
 <template>
-  <div>
+  <Teleport to="body">
     <div
-        class="modal fade"
-        id="createDiagramModal"
-        ref="createDiagramModal"
-        tabindex="-1"
-        role="dialog"
-        aria-labelledby="createDiagramModalLabel"
-        aria-hidden="true"
+      id="createDiagramModal"
+      ref="modalElement"
+      class="modal"
+      tabindex="-1"
+      aria-labelledby="createDiagramModalLabel"
+      aria-hidden="true"
     >
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content shadow">
           <div class="modal-header">
-            <h5 class="modal-title fw-bold fs-4" id="createDiagramModalLabel">
-              New Diagram
-            </h5>
+            <h2 id="createDiagramModalLabel" class="modal-title fw-bold fs-4">New Diagram</h2>
             <button
-                type="button"
-                class="btn-close"
-                aria-label="Close"
-                data-bs-dismiss="modal"
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              data-bs-dismiss="modal"
             ></button>
           </div>
-
-          <div class="modal-body">
-            <form @submit.prevent="createDiagram">
+          <form @submit.prevent="createDiagram">
+            <div class="modal-body">
               <div class="mb-3">
-                <label for="title" class="form-label fw-bold fs-5">Title</label>
+                <label for="diagram-title" class="form-label fw-bold fs-5">Title</label>
                 <input
-                    type="text"
-                    v-model="form.title"
-                    class="form-control"
-                    id="title"
-                    placeholder="New Diagram"
-                    required
+                  id="diagram-title"
+                  ref="titleInput"
+                  v-model="form.title"
+                  type="text"
+                  class="form-control"
+                  placeholder="New Diagram"
+                  required
                 />
               </div>
-
               <div class="mb-3">
-                <label for="languageGraphFile" class="form-label fw-bold fs-5">
+                <label for="language-graph-file" class="form-label fw-bold fs-5">
                   MAL LangGraph <span class="text-muted fw-normal">(Optional)</span>
                 </label>
                 <input
-                    ref="languageGraphInput"
-                    type="file"
-                    class="form-control"
-                    id="languageGraphFile"
-                    accept=".json,application/json"
-                    @change="handleLanguageGraphSelected"
+                  id="language-graph-file"
+                  ref="languageGraphInput"
+                  type="file"
+                  class="form-control"
+                  accept=".json"
+                  aria-describedby="language-graph-help"
+                  :aria-invalid="Boolean(errorMessage)"
+                  @change="handleLanguageGraphSelected"
                 />
-                <div v-if="languageGraphFile" class="form-text">
-                  {{ languageGraphFile.name }} - {{ languageGraphAssetCount }} assets
+                <div id="language-graph-help" class="form-text" aria-live="polite">
+                  <span v-if="isReading">Reading MAL LangGraph…</span>
+                  <span v-else-if="languageGraphDocument">
+                    {{ languageGraphDocument.languageGraph.fileName }} — {{ assetCount }} assets
+                  </span>
+                  <span v-else
+                    >Optionally attach an asset and attack-step catalog. Only .json files are
+                    supported.</span
+                  >
                 </div>
-                <div v-else class="form-text">
-                  Without a MAL LangGraph, only TTC and Shortest Path simulation are available. MAL Simulator is disabled.
-                </div>
+                <button
+                  v-if="selectedFileName"
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary mt-2"
+                  @click="clearLanguageGraph"
+                >
+                  Remove file
+                </button>
               </div>
-
+              <LangSchemaSelect
+                ref="schemaSelect"
+                id="diagram-lang-schema"
+                v-model="form.threatCatalogSchema"
+                class="mb-3"
+              />
               <div class="mb-3">
-                <label for="version" class="form-label fw-bold fs-5">Version</label>
+                <label for="diagram-version" class="form-label fw-bold fs-5">Version</label>
                 <input
-                    type="text"
-                    v-model="form.version"
-                    class="form-control"
-                    id="version"
-                    placeholder="1.0.0"
+                  id="diagram-version"
+                  v-model="form.version"
+                  type="text"
+                  class="form-control"
+                  placeholder="1.0.0"
                 />
               </div>
-
               <div class="mb-3">
-                <label for="description" class="form-label fw-bold fs-5">Description</label>
+                <label for="diagram-description" class="form-label fw-bold fs-5">Description</label>
                 <textarea
-                    v-model="form.description"
-                    class="form-control"
-                    id="description"
-                    rows="4"
-                    placeholder="Describe the threat model"
+                  id="diagram-description"
+                  v-model="form.description"
+                  class="form-control"
+                  rows="4"
+                  placeholder="Describe the threat model"
                 ></textarea>
               </div>
-
-              <div v-if="errorMessage" class="alert alert-danger">
+              <div v-if="errorMessage" class="alert alert-danger mb-0" role="alert">
                 {{ errorMessage }}
               </div>
-
-              <div class="text-end">
-                <button type="button" class="btn btn-secondary me-2" @click="closeModal">
-                  Cancel
-                </button>
-                <button type="submit" class="btn btn-primary" :disabled="!canCreate">
-                  Create
-                </button>
-              </div>
-            </form>
-          </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                Cancel
+              </button>
+              <button type="submit" class="btn btn-primary" :disabled="!canCreate">
+                {{ isCreating ? 'Creating…' : 'Create' }}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
-
-    <AssetTypeConfigModal
-      :visible="showAssetConfigModal"
-      :assets="assetTypeConfigAssets"
-      @confirm="handleAssetTypeConfigConfirm"
-      @cancel="handleAssetTypeConfigCancel"
-    />
-  </div>
+  </Teleport>
 </template>
-
-<script setup>
-import { computed, ref, reactive, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useThreatModelStore } from '@/stores/threatModelStore.js'
-import {
-  createEmptyThreatModelFromLanguageGraph,
-  normalizeLanguageGraph
-} from '@/service/langGraph/languageGraph.js'
-import { Modal } from 'bootstrap'
-import AssetTypeConfigModal from './AssetTypeConfigModal.vue'
-
-const tmStore = useThreatModelStore()
-const router = useRouter()
-const createDiagramModal = ref(null)
-const languageGraphInput = ref(null)
-const languageGraphFile = ref(null)
-const parsedLanguageGraph = ref(null)
-const languageGraphSourceText = ref('')
-const errorMessage = ref('')
-const showAssetConfigModal = ref(false)
-const assetTypeConfigAssets = ref([])
-let modalInstance = null
-
-const form = reactive({
-  title: 'New Diagram',
-  version: '',
-  description: ''
-})
-
-const languageGraphAssetCount = computed(() => {
-  if (!parsedLanguageGraph.value) return 0
-  return normalizeLanguageGraph(parsedLanguageGraph.value).assets.filter(asset => !asset.isAbstract).length
-})
-
-const canCreate = computed(() => {
-  return form.title.trim().length > 0 && !errorMessage.value
-})
-
-const resetForm = () => {
-  form.title = 'New Diagram'
-  form.version = ''
-  form.description = ''
-  languageGraphFile.value = null
-  parsedLanguageGraph.value = null
-  languageGraphSourceText.value = ''
-  errorMessage.value = ''
-  showAssetConfigModal.value = false
-  assetTypeConfigAssets.value = []
-
-  if (languageGraphInput.value) {
-    languageGraphInput.value.value = ''
-  }
-}
-
-const handleLanguageGraphSelected = async (event) => {
-  const file = event.target.files?.[0]
-  languageGraphFile.value = file || null
-  parsedLanguageGraph.value = null
-  languageGraphSourceText.value = ''
-  errorMessage.value = ''
-
-  if (!file) return
-
-  try {
-    const content = await file.text()
-    const parsed = JSON.parse(content)
-    const normalized = normalizeLanguageGraph(parsed, file.name)
-
-    if (!normalized.assets.some(asset => !asset.isAbstract)) {
-      throw new Error('No concrete assets were found in the LanguageGraph file.')
-    }
-
-    if (!form.version) {
-      form.version = normalized.metadata?.version || ''
-    }
-
-    parsedLanguageGraph.value = parsed
-    languageGraphSourceText.value = content
-  } catch (error) {
-    languageGraphFile.value = null
-    parsedLanguageGraph.value = null
-    languageGraphSourceText.value = ''
-    errorMessage.value = error.message || 'Failed to parse LanguageGraph JSON.'
-
-    if (languageGraphInput.value) {
-      languageGraphInput.value.value = ''
-    }
-  }
-}
-
-const buildAssetTypeConfigAssets = () => {
-  if (!parsedLanguageGraph.value) return []
-
-  return normalizeLanguageGraph(parsedLanguageGraph.value, languageGraphFile.value?.name || '')
-    .assets
-    .filter(asset => !asset.isAbstract)
-    .map(asset => ({
-      id: asset.name,
-      name: asset.name,
-      malType: asset.category || asset.superAsset || asset.name,
-      dfdShape: asset.dfdShape || 'process'
-    }))
-}
-
-const buildConfiguredLanguageGraph = (configuredAssets) => {
-  if (!parsedLanguageGraph.value) return null
-
-  const shapeByAssetName = new Map(
-    configuredAssets.map(asset => [asset.id || asset.name, asset.dfdShape || 'process'])
-  )
-  const normalized = normalizeLanguageGraph(parsedLanguageGraph.value, languageGraphFile.value?.name || '')
-
-  return {
-    ...normalized,
-    assets: normalized.assets.map(asset => ({
-      ...asset,
-      dfdShape: shapeByAssetName.get(asset.name) || asset.dfdShape || 'process'
-    }))
-  }
-}
-
-const finishCreateDiagram = async ({
-  displayLanguageGraph = null,
-  sourceLanguageGraph = parsedLanguageGraph.value
-} = {}) => {
-  if (!canCreate.value) {
-    errorMessage.value = 'Enter a title and fix any invalid LanguageGraph file.'
-    return
-  }
-
-  const threatModel = createEmptyThreatModelFromLanguageGraph(
-      form,
-      sourceLanguageGraph,
-      languageGraphFile.value?.name || ''
-  )
-  if (displayLanguageGraph) {
-    threatModel.languageGraph = displayLanguageGraph
-    threatModel.languageGraphSource = sourceLanguageGraph
-  }
-  threatModel.languageGraphSourceText = sourceLanguageGraph ? languageGraphSourceText.value : ''
-
-  tmStore.clear()
-  tmStore.setFileName(`${form.title}.json`)
-  tmStore._stashThreatModel(threatModel)
-  tmStore.selectDiagram(threatModel.diagrams)
-
-  closeModal()
-  await router.push({ name: 'EditDiagram', params: { title: threatModel.modelInfo.title } })
-}
-
-const createDiagram = async () => {
-  if (!canCreate.value) {
-    errorMessage.value = 'Enter a title and fix any invalid LanguageGraph file.'
-    return
-  }
-
-  if (parsedLanguageGraph.value) {
-    assetTypeConfigAssets.value = buildAssetTypeConfigAssets()
-    modalInstance?.hide()
-    showAssetConfigModal.value = true
-    return
-  }
-
-  await finishCreateDiagram({ displayLanguageGraph: null, sourceLanguageGraph: null })
-}
-
-const handleAssetTypeConfigConfirm = async (configuredAssets) => {
-  showAssetConfigModal.value = false
-  const configuredLanguageGraph = buildConfiguredLanguageGraph(configuredAssets)
-  await finishCreateDiagram({
-    displayLanguageGraph: configuredLanguageGraph,
-    sourceLanguageGraph: parsedLanguageGraph.value
-  })
-}
-
-const handleAssetTypeConfigCancel = () => {
-  showAssetConfigModal.value = false
-  modalInstance?.show()
-}
-
-const openModal = () => {
-  resetForm()
-  modalInstance?.show()
-}
-
-const closeModal = () => {
-  modalInstance?.hide()
-}
-
-onMounted(() => {
-  if (createDiagramModal.value) {
-    modalInstance = new Modal(createDiagramModal.value)
-  }
-})
-
-onUnmounted(() => {
-  modalInstance?.dispose()
-  modalInstance = null
-})
-
-defineExpose({
-  openModal,
-})
-</script>
 
 <style scoped>
 .modal-content {
   border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 20%);
 }
 </style>

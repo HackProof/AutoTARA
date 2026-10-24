@@ -1,0 +1,16 @@
+#id: "autotara-test"
+#version: "1.0.0"
+
+category Test {
+  asset Device {
+    | entry -> left, right, deadEnd, blocked
+    | left -> gate
+    | right -> gate
+    & gate -> target
+    | deadEnd
+    | target
+    | unreachable
+    # protected [Enabled] -> blocked
+    & blocked
+  }
+}

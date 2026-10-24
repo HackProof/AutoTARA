@@ -1,0 +1,6 @@
+fastapi==0.146.0
+uvicorn==0.54.0
+pydantic==2.14.1
+PyYAML==6.0.3
+mal-toolbox==2.11.0
+mal-simulator==3.3.0

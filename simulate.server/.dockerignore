@@ -1,0 +1,16 @@
+.git/
+.env
+.env.*
+.venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+runs/
+logs/
+tests/
+README.md
+requirements-dev.txt
+pytest.ini

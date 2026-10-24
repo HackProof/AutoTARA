@@ -1,0 +1,25 @@
+name: autotara-simulation
+
+services:
+  simulation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autotara-simulation:local
+    init: true
+    restart: unless-stopped
+
+    environment:
+      SIMULATION_RUNS_DIR: /app/runs
+      SIMULATION_TIMEOUT_SECONDS: ${SIMULATION_TIMEOUT_SECONDS:-120}
+
+    ports:
+      - "127.0.0.1:${SIMULATION_PORT:-8000}:8000"
+
+    volumes:
+      - simulation_runs:/app/runs
+
+    stop_grace_period: 150s
+
+volumes:
+  simulation_runs:

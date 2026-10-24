@@ -1,0 +1,197 @@
+{
+    "metadata": {
+        "version": "1.0.0",
+        "id": "autotara-test"
+    },
+    "Device": {
+        "name": "Device",
+        "associations": {},
+        "attack_steps": {
+            "entry": {
+                "name": "entry",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {
+                    "Device:left": [
+                        null
+                    ],
+                    "Device:right": [
+                        null
+                    ],
+                    "Device:deadEnd": [
+                        null
+                    ],
+                    "Device:blocked": [
+                        null
+                    ]
+                },
+                "own_parents": {},
+                "info": {},
+                "overrides": true,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "left": {
+                "name": "left",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {
+                    "Device:gate": [
+                        null
+                    ]
+                },
+                "own_parents": {
+                    "Device:entry": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": true,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "right": {
+                "name": "right",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {
+                    "Device:gate": [
+                        null
+                    ]
+                },
+                "own_parents": {
+                    "Device:entry": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": true,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "gate": {
+                "name": "gate",
+                "type": "and",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {
+                    "Device:target": [
+                        null
+                    ]
+                },
+                "own_parents": {
+                    "Device:left": [
+                        null
+                    ],
+                    "Device:right": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": true,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "deadEnd": {
+                "name": "deadEnd",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {},
+                "own_parents": {
+                    "Device:entry": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": false,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "target": {
+                "name": "target",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {},
+                "own_parents": {
+                    "Device:gate": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": false,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "unreachable": {
+                "name": "unreachable",
+                "type": "or",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {},
+                "own_parents": {},
+                "info": {},
+                "overrides": false,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "protected": {
+                "name": "protected",
+                "type": "defense",
+                "asset": "Device",
+                "ttc": {
+                    "type": "function",
+                    "name": "Enabled",
+                    "arguments": []
+                },
+                "own_children": {
+                    "Device:blocked": [
+                        null
+                    ]
+                },
+                "own_parents": {},
+                "info": {},
+                "overrides": true,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            },
+            "blocked": {
+                "name": "blocked",
+                "type": "and",
+                "asset": "Device",
+                "ttc": null,
+                "own_children": {},
+                "own_parents": {
+                    "Device:entry": [
+                        null
+                    ],
+                    "Device:protected": [
+                        null
+                    ]
+                },
+                "info": {},
+                "overrides": false,
+                "inherits": null,
+                "tags": [],
+                "detectors": {}
+            }
+        },
+        "info": {},
+        "super_asset": "",
+        "sub_assets": [],
+        "variables": {},
+        "is_abstract": false
+    }
+}

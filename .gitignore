@@ -9,10 +9,9 @@
 /tara.vue/.idea/
 /tara.vue/dist/
 
-/mal-simulator.server/
-/simulator.server/test/malsim/
-
 /sample/logs/
 
 /db/backups
 /db/README.md
+/simulate.server/__pycache__
+/simulate.server/.pytest_cache

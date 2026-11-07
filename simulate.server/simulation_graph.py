@@ -1,7 +1,9 @@
-"""Extract the Target tree and the complete compromised attack-step subgraph."""
+"""Serialize performed attack steps and their original graph connections."""
+
+from simulation_trace import build_report_traces, prerequisite_snapshot
 
 
-def extract_attack_tree(attack_graph, attacker_state):
+def collect_simulation_graph(attack_graph, attacker_state, simulator=None):
     # Use instance nodes, not asset names: several attack steps can belong to one asset.
     performed = {
         node.id: node for node in attacker_state.performed_nodes
@@ -9,18 +11,6 @@ def extract_attack_tree(attack_graph, attacker_state):
     }
     entry_ids = {node.id for node in attacker_state.entry_points}
     goals = sorted(attacker_state.goals, key=lambda node: node.id)
-    reached = [node for node in goals if node.id in performed]
-    relevant = set()
-    pending = list(reached)
-    while pending:
-        node = pending.pop()
-        if node.id in relevant:
-            continue
-        relevant.add(node.id)
-        # Entry points are granted at reset; their preconditions were not required.
-        if node.id not in entry_ids:
-            pending.extend(parent for parent in node.parents if parent.id in performed)
-
     performed_at = {
         node.id: iteration
         for iteration, nodes in sorted(attacker_state.performed_nodes_order.items(), reverse=True)
@@ -38,27 +28,26 @@ def extract_attack_tree(attack_graph, attacker_state):
             "assetId": str(asset.id) if asset else None,
             "assetType": asset.type if asset else "",
             "performedAt": performed_at.get(node.id),
+            **({"prerequisites": prerequisite_snapshot(simulator, node)} if simulator else {}),
         }
 
-    nodes = [serialize(performed[node_id]) for node_id in sorted(relevant)]
-
-    def edges_for(node_ids):
-        return [
-            {"source": str(parent.id), "target": str(node_id)}
-            for node_id in sorted(node_ids - entry_ids)
-            for parent in sorted(performed[node_id].parents, key=lambda node: node.id)
-            if parent.id in node_ids
-        ]
-
     return {
-        "nodes": nodes,
-        "edges": edges_for(relevant),
         "entryIds": [str(node_id) for node_id in sorted(entry_ids)],
         "targetIds": [str(node.id) for node in goals],
         "targets": [{**serialize(node), "reached": node.id in performed} for node in goals],
-        "compromisedAssets": sorted({node["asset"] for node in nodes}),
         "performedNodes": [serialize(performed[node_id]) for node_id in sorted(performed)],
-        # Preserve off-Target branches even when no goal was reached. These are
-        # graph connections between performed steps, not a causal action trace.
-        "performedEdges": edges_for(set(performed)),
+        # Preserve shared nodes, cycles and off-Target steps without unfolding
+        # them into a hierarchy. Entries are granted without incoming attacks.
+        "performedEdges": [
+            {"source": str(parent.id), "target": str(node_id)}
+            for node_id in sorted(performed.keys() - entry_ids)
+            for parent in sorted(performed[node_id].parents, key=lambda node: node.id)
+            if parent.id in performed
+        ],
+        **({
+            "reportTraceVersion": 1,
+            "reportTraces": build_report_traces(
+                simulator, performed, entry_ids, goals, performed_at,
+            ),
+        } if simulator else {}),
     }

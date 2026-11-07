@@ -18,7 +18,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
     && mkdir -p /app/runs \
     && chown -R app:app /app
 
-COPY --chown=app:app main.py worker.py schemas.py attack_tree.py ./
+COPY --chown=app:app main.py worker.py schemas.py simulation_graph.py simulation_trace.py ./
 
 USER app
 

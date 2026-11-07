@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import traceback
 
-from attack_tree import extract_attack_tree
+from simulation_graph import collect_simulation_graph
 
 
 def run(directory: Path):
@@ -26,8 +26,8 @@ def run(directory: Path):
     state = simulator.agent_states["Attacker"]
     graph = simulator.sim_state.attack_graph
     graph.save_to_file(str(directory / "attackgraph.json"))
-    tree = extract_attack_tree(graph, state)
-    reached_all = all(target["reached"] for target in tree["targets"])
+    result_graph = collect_simulation_graph(graph, state, simulator)
+    reached_all = all(target["reached"] for target in result_graph["targets"])
     stop_reason = "goals_reached" if reached_all else "exhausted" if simulator.done() else "max_steps"
     result = {
         "attackerType": request["attacker_type"],
@@ -38,7 +38,7 @@ def run(directory: Path):
         "steps": len(actions.get("Attacker", [])),
         "attackGraphNodeCount": len(graph.nodes),
         "performedCount": len(state.performed_nodes),
-        "tree": tree,
+        "graph": result_graph,
     }
     (directory / "result.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 

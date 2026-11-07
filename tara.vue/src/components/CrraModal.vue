@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Modal } from 'bootstrap'
-import { createSusceptibilityMatrix } from '@/services/susceptibilityMatrix.js'
+import { createSusceptibilityMatrix, scopeAttackVectors } from '@/services/susceptibilityMatrix.js'
 import {
   CRRA_RISK_BANDS,
   createCrraDraft,
@@ -28,6 +28,10 @@ const snapshot = shallowRef(null)
 const schema = ref('')
 const tab = ref('vectors')
 const search = ref('')
+const assetSearch = ref('')
+const selectedAssetIds = ref([])
+const compromisedOnly = ref(false)
+const compromisedAssetIds = shallowRef(new Set())
 const draft = ref(createCrraDraft())
 const schemaMatches = computed(() => schema.value === props.catalogSchema)
 const matrix = computed(() =>
@@ -38,9 +42,47 @@ const matrix = computed(() =>
   ),
 )
 const visibleVectors = computed(() =>
-  matrix.value.rows.filter((row) =>
+  assetScopedVectors.value.filter((row) =>
     `${row.avId} ${row.attackVector}`.toLowerCase().includes(search.value.trim().toLowerCase()),
   ),
+)
+const assetColumns = computed(() => {
+  const counts = new Map()
+  for (const row of matrix.value.rows) {
+    for (const cell of row.cells) {
+      if (cell.riskScore !== null) counts.set(cell.cartId, (counts.get(cell.cartId) || 0) + 1)
+    }
+  }
+  return matrix.value.columns.map((cart) => ({
+    ...cart,
+    compromised: compromisedAssetIds.value.has(cart.id),
+    mappedAvCount: counts.get(cart.id) || 0,
+  }))
+})
+const compromisedColumns = computed(() => assetColumns.value.filter((cart) => cart.compromised))
+const filteredAssets = computed(() =>
+  assetColumns.value.filter((cart) =>
+    `${cart.id} ${cart.name}`.toLowerCase().includes(assetSearch.value.trim().toLowerCase()),
+  ),
+)
+const selectedAssetIdSet = computed(() => new Set(selectedAssetIds.value))
+const visibleColumns = computed(() =>
+  compromisedOnly.value
+    ? compromisedColumns.value
+    : assetColumns.value.filter((cart) => selectedAssetIdSet.value.has(cart.id)),
+)
+const visibleAssetIds = computed(() => new Set(visibleColumns.value.map((cart) => cart.id)))
+const assetScopedVectors = computed(() =>
+  scopeAttackVectors(matrix.value.rows, visibleAssetIds.value),
+)
+const mappedVectors = computed(() => assetScopedVectors.value.filter((row) => row.assetCount > 0))
+const compromisedAvCount = computed(
+  () =>
+    matrix.value.rows.filter((row) =>
+      row.cells.some(
+        (cell) => cell.riskScore !== null && compromisedAssetIds.value.has(cell.cartId),
+      ),
+    ).length,
 )
 const vectors = computed(() =>
   matrix.value.rows.filter((row) => draft.value.selectedAvIds.includes(row.avId)),
@@ -71,6 +113,25 @@ const selectionResult = shallowRef(null)
 let worker
 let modalInstance
 let triggerElement
+let performedSteps = new Set()
+let automaticallySelectedAvIds = new Set()
+
+function selectCompromisedVectors() {
+  const ids = matrix.value.rows
+    .filter((row) =>
+      row.cells.some((cell) =>
+        cell.sourceSteps.some((step) =>
+          performedSteps.has(JSON.stringify([cell.cartId, step.name])),
+        ),
+      ),
+    )
+    .map((row) => row.avId)
+    .filter((id) => !automaticallySelectedAvIds.has(id))
+  if (!ids.length) return
+  ids.forEach((id) => automaticallySelectedAvIds.add(id))
+  draft.value.selectedAvIds = [...new Set([...draft.value.selectedAvIds, ...ids])]
+}
+watch(matrix, selectCompromisedVectors, { flush: 'sync' })
 
 function cancelSearch() {
   worker?.terminate()
@@ -140,9 +201,24 @@ watch(
   },
 )
 function openModal(context) {
+  performedSteps = new Set()
+  automaticallySelectedAvIds = new Set()
+  compromisedOnly.value = false
+  const performedNodes = (context.performedNodes || []).filter(
+    (node) => (node.type === 'and' || node.type === 'or') && node.cellId,
+  )
+  compromisedAssetIds.value = new Set(performedNodes.map((node) => node.cellId))
   snapshot.value = context.snapshot
   schema.value = context.schema
+  selectedAssetIds.value = matrix.value.columns.map((cart) => cart.id)
+  assetSearch.value = ''
   draft.value = createCrraDraft(context.snapshot?.metadata?.crra?.[context.schema])
+  performedSteps = new Set(
+    performedNodes
+      .filter((node) => node.name)
+      .map((node) => JSON.stringify([node.cellId, node.name])),
+  )
+  selectCompromisedVectors()
   search.value = ''
   tab.value = 'vectors'
   errorMessage.value = ''
@@ -154,6 +230,26 @@ function openModal(context) {
 function selectVisible() {
   draft.value.selectedAvIds = [
     ...new Set([...draft.value.selectedAvIds, ...visibleVectors.value.map((av) => av.avId)]),
+  ]
+}
+function toggleAsset(id, checked) {
+  const ids = new Set(visibleAssetIds.value)
+  if (checked) ids.add(id)
+  else ids.delete(id)
+  selectedAssetIds.value = [...ids]
+  compromisedOnly.value = false
+}
+function selectAllAssets() {
+  selectedAssetIds.value = matrix.value.columns.map((cart) => cart.id)
+  compromisedOnly.value = false
+}
+function clearAssetSelection() {
+  selectedAssetIds.value = []
+  compromisedOnly.value = false
+}
+function selectMappedVectors() {
+  draft.value.selectedAvIds = [
+    ...new Set([...draft.value.selectedAvIds, ...mappedVectors.value.map((av) => av.avId)]),
   ]
 }
 function toggleAllVectors(checked) {
@@ -314,9 +410,11 @@ defineExpose({ openModal })
               </p>
               <section v-if="tab === 'vectors'" aria-label="Select attack vectors">
                 <p class="small text-muted">
-                  Select Technique-based AVs from the current Susceptibility Matrix. Scores retain
-                  the maximum assessed Risk Score across Shopping Carts. A selected CM is evaluated
-                  across these AVs for this diagram.
+                  Select Technique-based AVs from the current Susceptibility Matrix. Displayed Risk
+                  Scores use the maximum assessed score across the selected assets. Rows sort by
+                  Risk Score (high to low), mapped asset count (high to low), then AV ID
+                  (ascending). AVs without an assessed mapping in the selected assets appear last
+                  with no score.
                 </p>
                 <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
                   <div class="flex-grow-1">
@@ -342,6 +440,116 @@ defineExpose({ openModal })
                     >{{ vectors.length }} selected / {{ matrix.rows.length }}</span
                   >
                 </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                  <button
+                    type="button"
+                    class="btn btn-sm"
+                    :class="compromisedOnly ? 'btn-danger' : 'btn-outline-danger'"
+                    :aria-pressed="compromisedOnly"
+                    :disabled="!compromisedColumns.length"
+                    :title="
+                      compromisedColumns.length
+                        ? 'Show only asset columns compromised in the current simulation'
+                        : 'Run a simulation with compromised assets to enable this filter'
+                    "
+                    @click="compromisedOnly = !compromisedOnly"
+                  >
+                    Show compromised assets only
+                  </button>
+                  <span v-if="compromisedColumns.length" class="small" role="status">
+                    {{ compromisedColumns.length }} compromised assets ·
+                    {{ compromisedAvCount }} mapped AVs (unique)
+                  </span>
+                </div>
+                <p v-if="compromisedColumns.length" class="small text-muted">
+                  AV counts include all assessed Technique AVs mapped to each compromised asset,
+                  regardless of search or AV selection.
+                </p>
+                <details class="asset-picker border rounded mb-3">
+                  <summary class="px-3 py-2">
+                    Select assets · {{ visibleColumns.length }} / {{ assetColumns.length }} assets ·
+                    {{ mappedVectors.length }} mapped AVs (unique)
+                  </summary>
+                  <div class="p-3 pt-1">
+                    <p id="crra-asset-help" class="small text-muted mb-2">
+                      Choose which asset columns to display. Use Select mapped AVs to add all their
+                      assessed Technique AVs to the AV selection, including AVs hidden by search.
+                    </p>
+                    <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                      <div class="flex-grow-1">
+                        <label for="crra-asset-search" class="form-label small"
+                          >Search assets</label
+                        >
+                        <input
+                          id="crra-asset-search"
+                          v-model="assetSearch"
+                          type="search"
+                          class="form-control form-control-sm"
+                          placeholder="Asset name or ID"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        :disabled="!assetColumns.length"
+                        @click="selectAllAssets"
+                      >
+                        Select all assets
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        :disabled="!visibleColumns.length"
+                        @click="clearAssetSelection"
+                      >
+                        Clear asset selection
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        :disabled="!mappedVectors.length"
+                        @click="selectMappedVectors"
+                      >
+                        Select mapped AVs
+                      </button>
+                    </div>
+                    <fieldset aria-describedby="crra-asset-help">
+                      <legend class="visually-hidden">Asset columns</legend>
+                      <div class="asset-options">
+                        <label
+                          v-for="cart in filteredAssets"
+                          :key="cart.id"
+                          class="asset-option d-flex align-items-start gap-2 border rounded p-2"
+                        >
+                          <input
+                            type="checkbox"
+                            class="form-check-input flex-shrink-0"
+                            :checked="visibleAssetIds.has(cart.id)"
+                            :aria-label="`Show asset ${cart.name} (ID: ${cart.id})`"
+                            @change="toggleAsset(cart.id, $event.target.checked)"
+                          />
+                          <span class="small">
+                            <span class="fw-semibold">{{ cart.name }}</span>
+                            <span v-if="cart.compromised" class="badge text-bg-danger ms-1"
+                              >Compromised</span
+                            >
+                            <span class="d-block text-muted">ID: {{ cart.id }}</span>
+                            <span class="d-block">Mapped AVs: {{ cart.mappedAvCount }}</span>
+                          </span>
+                        </label>
+                      </div>
+                    </fieldset>
+                    <p v-if="!filteredAssets.length" class="small text-muted mb-0">
+                      No matching assets.
+                    </p>
+                  </div>
+                </details>
+                <p
+                  v-if="assetColumns.length && !visibleColumns.length"
+                  class="alert alert-info small"
+                >
+                  Select at least one asset to display its column.
+                </p>
                 <p v-if="!matrix.rows.length" class="alert alert-info small">
                   No mapped, TTP-scored AVs. Complete asset assessments in CTSA and reopen CRRA.
                 </p>
@@ -355,9 +563,15 @@ defineExpose({ openModal })
                     <caption class="small">
                       Current Susceptibility Matrix ·
                       {{
-                        matrix.columns.length
+                        visibleColumns.length
                       }}
                       Shopping Carts
+                      <template v-if="compromisedOnly">
+                        (compromised only; {{ matrix.columns.length }} total)
+                      </template>
+                      <template v-else-if="visibleColumns.length !== matrix.columns.length">
+                        (selected assets; {{ matrix.columns.length }} total)
+                      </template>
                     </caption>
                     <thead class="table-light">
                       <tr>
@@ -383,14 +597,21 @@ defineExpose({ openModal })
                           Risk Score
                         </th>
                         <th
-                          v-for="cart in matrix.columns"
+                          v-for="cart in visibleColumns"
                           :key="cart.id"
                           scope="col"
                           class="cart-column text-center"
+                          :class="{ 'compromised-column': cart.compromised }"
                         >
                           <span class="d-block small text-muted fw-normal">Shopping Cart</span>
                           {{ cart.name }}
                           <span class="d-block small text-muted fw-normal">ID: {{ cart.id }}</span>
+                          <span v-if="cart.compromised" class="badge text-bg-danger mt-1"
+                            >Compromised</span
+                          >
+                          <span class="d-block small mt-1"
+                            >Mapped AVs: {{ cart.mappedAvCount }}</span
+                          >
                         </th>
                       </tr>
                     </thead>
@@ -452,8 +673,8 @@ defineExpose({ openModal })
                       P = Preventative; R = Responsive. Utility counts each effect type once per
                       selected AV. Confidence / level is displayed as evidence and does not multiply
                       Utility. D (Detect) is retained for reference and excluded from P/R scoring
-                      and coverage. P and R weights default to 1 each. Available catalog costs
-                      are prefilled and can be adjusted for this assessment.
+                      and coverage. P and R weights default to 1 each. Available catalog costs are
+                      prefilled and can be adjusted for this assessment.
                     </p>
                     <p v-if="catalog.missingFields?.length" class="alert alert-info small">
                       Missing catalog data: {{ catalog.missingFields.join(', ') }}. Enter assessment
@@ -487,9 +708,31 @@ defineExpose({ openModal })
                       {{ candidates.filter((cm) => cm.eligible).length }} ready for automatic
                       selection. Missing scores sort last.
                     </p>
+                    <div
+                      class="d-flex flex-wrap align-items-center gap-3 border rounded bg-body-tertiary p-3 mb-3"
+                    >
+                      <div class="flex-grow-1 manual-selection-help">
+                        <h3 class="fs-6 mb-1">Manual selection (optional)</h3>
+                        <p class="small mb-0">
+                          Check “Include in solution” to choose CMs yourself and review them in step
+                          4. For automatic selection, continue to step 3; all eligible CMs are
+                          considered, whether checked or unchecked.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        :disabled="!solution.rows.length"
+                        @click="tab = 'solution'"
+                      >
+                        Review solution ({{ solution.rows.length }} CMs)
+                      </button>
+                    </div>
                     <CrraCandidateTable
                       :candidates="ranked"
                       :selected-ids="draft.selectedCmIds"
+                      :vectors="vectors"
+                      :assets="matrix.columns"
                       @edit="editCandidate"
                       @toggle="toggleCandidate"
                     />
@@ -551,10 +794,17 @@ defineExpose({ openModal })
                       for the fewest CMs satisfying the strategy. Equal-size sets are not compared
                       by total cost. A search limit is reported explicitly.
                     </p>
+                    <p id="crra-auto-selection-help" class="small">
+                      All eligible CMs are considered, whether checked or unchecked in step 2.
+                      <strong
+                        >Running automatic selection replaces the current CM selection.</strong
+                      >
+                    </p>
                     <div class="d-flex gap-2">
                       <button
                         class="btn btn-primary"
                         :disabled="solving || !vectors.length"
+                        aria-describedby="crra-auto-selection-help"
                         @click="selectAutomatically"
                       >
                         {{ solving ? 'Searching…' : 'Find minimum CM combination' }}</button
@@ -635,5 +885,22 @@ defineExpose({ openModal })
 }
 .strategy-table input {
   min-width: 145px;
+}
+.manual-selection-help {
+  flex-basis: 36rem;
+}
+.matrix-table thead th.compromised-column {
+  background: var(--bs-danger-bg-subtle);
+}
+.asset-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.asset-option {
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 </style>

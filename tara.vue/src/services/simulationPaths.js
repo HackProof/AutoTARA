@@ -31,14 +31,11 @@ export function summarizeSimulationPathRisks(nodes, paths) {
   })
 }
 
-export function findSimulationPaths(tree, targetId, options = {}) {
-  const performed = new Set((tree.performedNodes || tree.nodes).map((node) => node.id))
-  const nodes = tree.nodes.filter(
-    (node) => performed.has(node.id) && ['and', 'or'].includes(node.type),
-  )
+export function findSimulationPaths(simulationGraph, targetId, options = {}) {
+  const nodes = simulationGraph.performedNodes.filter((node) => ['and', 'or'].includes(node.type))
   const ids = new Set(nodes.map((node) => node.id))
-  const entries = [...new Set(tree.entryIds.filter((id) => ids.has(id)))]
-  const target = tree.targets.find((node) => node.id === targetId)
+  const entries = [...new Set(simulationGraph.entryIds.filter((id) => ids.has(id)))]
+  const target = simulationGraph.targets.find((node) => node.id === targetId)
   if (!target?.reached || !ids.has(targetId) || !entries.length)
     return {
       targetId,
@@ -50,7 +47,9 @@ export function findSimulationPaths(tree, targetId, options = {}) {
     }
   const graph = {
     nodes,
-    edges: tree.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
+    edges: simulationGraph.performedEdges.filter(
+      (edge) => ids.has(edge.source) && ids.has(edge.target),
+    ),
     entryIds: entries,
     targetIds: [targetId],
   }

@@ -1,6 +1,35 @@
 import { riskScoreLabel } from './ttpScoring.js'
 import { collectCrraAssessments } from './crraAssessments.js'
 
+function compareAttackVectors(a, b) {
+  const aAssessed = Number.isFinite(a.riskScore)
+  const bAssessed = Number.isFinite(b.riskScore)
+  if (aAssessed !== bAssessed) return aAssessed ? -1 : 1
+  return (
+    (aAssessed ? b.riskScore - a.riskScore : 0) ||
+    b.assetCount - a.assetCount ||
+    a.avId.localeCompare(b.avId)
+  )
+}
+
+// Keep every AV selectable; rows without an assessed mapping in the selected
+// assets have no Risk Score and sort after assessed rows.
+export function scopeAttackVectors(rows, assetIds) {
+  const selected = new Set(assetIds)
+  return rows
+    .map((row) => {
+      const cells = row.cells.filter((cell) => selected.has(cell.cartId))
+      const scores = cells.map((cell) => cell.riskScore).filter(Number.isFinite)
+      return {
+        ...row,
+        cells,
+        riskScore: scores.length ? Math.max(...scores) : null,
+        assetCount: scores.length,
+      }
+    })
+    .sort(compareAttackVectors)
+}
+
 // Carts supply already assessed scores. Group by AV identity, keep the maximum
 // per cart, and then take the maximum across carts without recalculating risk.
 export function buildSusceptibilityMatrix(carts) {
@@ -42,6 +71,7 @@ export function buildSusceptibilityMatrix(carts) {
       avId,
       attackVector,
       riskScore,
+      assetCount: scores.size,
       cells: columns.map(({ id }) => {
         const score = scores.get(id)
         return {
@@ -55,7 +85,7 @@ export function buildSusceptibilityMatrix(carts) {
       }),
     }
   })
-  rows.sort((a, b) => b.riskScore - a.riskScore || a.avId.localeCompare(b.avId))
+  rows.sort(compareAttackVectors)
   return { columns, rows }
 }
 

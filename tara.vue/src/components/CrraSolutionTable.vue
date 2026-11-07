@@ -1,5 +1,5 @@
 <script setup>
-import { effectLabel, crraScoreLabel } from '@/services/crra.js'
+import { effectLabel, crraScoreLabel, crraRatioLabel } from '@/services/crra.js'
 import { riskScoreLabel } from '@/services/ttpScoring.js'
 defineProps({ solution: { type: Object, required: true } })
 </script>
@@ -59,7 +59,7 @@ defineProps({ solution: { type: Object, required: true } })
             </th>
             <td class="text-center text-nowrap">{{ crraScoreLabel(cm.utility) }}</td>
             <td class="text-center text-nowrap">{{ crraScoreLabel(cm.cost) }}</td>
-            <td class="text-center text-nowrap">{{ crraScoreLabel(cm.ratio) }}</td>
+            <td class="text-center text-nowrap">{{ crraRatioLabel(cm.ratio) }}</td>
             <td
               v-for="av in solution.coverage"
               :key="av.avId"

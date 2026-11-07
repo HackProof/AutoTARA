@@ -6,13 +6,13 @@ import { calculateAttackFeasibilityRating } from './attackFeasibilityRating.js'
 // different Targets or let a display filter change the rating. This preserves
 // AND support and all performed OR alternatives, with the same time filtering
 // and Entry boundary as the Target-only result diagram.
-export function summarizeSimulationAfr(tree) {
-  const graph = buildSimulationResultGraph(tree, { targetPathsOnly: true })
+export function summarizeSimulationAfr(simulationGraph) {
+  const graph = buildSimulationResultGraph(simulationGraph, { targetPathsOnly: true })
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]))
   const parents = new Map(graph.nodes.map((node) => [node.id, []]))
   for (const edge of graph.edges) parents.get(edge.target).push(edge.source)
-  const entries = new Set(tree.entryIds)
-  return tree.targets.map((target) => {
+  const entries = new Set(simulationGraph.entryIds)
+  return simulationGraph.targets.map((target) => {
     const included = new Set(),
       pending = target.reached ? [target.id] : []
     while (pending.length) {
@@ -27,6 +27,13 @@ export function summarizeSimulationAfr(tree) {
     )
     return {
       ...summary,
+      attackVectors: summary.assessedStepIds
+        .map((id) => nodes.get(id))
+        .sort(compareSteps)
+        .map((node) => ({
+          node,
+          factors: Object.fromEntries(node.ttpFactors.map(({ key, value }) => [key, value])),
+        })),
       target,
       entryIds,
       scope: 'target-predecessors',
@@ -45,13 +52,13 @@ const compareSteps = (a, b) =>
   compareIterations(a.performedAt, b.performedAt) ||
   String(a.id).localeCompare(String(b.id), 'en', { numeric: true })
 
-// Unlike the Target-rooted Attack Tree, this view includes every compromised
-// attack step, including initial Entries and branches that never reached a goal.
-export function buildSimulationResultGraph(tree, { targetPathsOnly = false } = {}) {
-  const entries = new Set(tree.entryIds)
-  const targets = new Set(tree.targetIds)
+// Include every performed attack step, including initial Entries and
+// steps outside reached Target routes. Shared steps and cycles stay intact.
+export function buildSimulationResultGraph(simulationGraph, { targetPathsOnly = false } = {}) {
+  const entries = new Set(simulationGraph.entryIds)
+  const targets = new Set(simulationGraph.targetIds)
   const nodesById = new Map()
-  for (const node of tree.performedNodes ?? tree.nodes) {
+  for (const node of simulationGraph.performedNodes) {
     if (node.type !== 'and' && node.type !== 'or') continue
     nodesById.set(node.id, {
       ...node,
@@ -61,7 +68,7 @@ export function buildSimulationResultGraph(tree, { targetPathsOnly = false } = {
     })
   }
   const edgeKeys = new Set()
-  let edges = (tree.performedEdges ?? tree.edges).filter(({ source, target }) => {
+  let edges = simulationGraph.performedEdges.filter(({ source, target }) => {
     const key = JSON.stringify([source, target])
     if (
       !nodesById.has(source) ||
@@ -96,7 +103,7 @@ export function buildSimulationResultGraph(tree, { targetPathsOnly = false } = {
     const parents = new Map(nodes.map((node) => [node.id, []]))
     for (const edge of edges) parents.get(edge.target).push(edge.source)
     const relevant = new Set()
-    const pending = tree.targets.filter((node) => node.reached).map((node) => node.id)
+    const pending = simulationGraph.targets.filter((node) => node.reached).map((node) => node.id)
     while (pending.length) {
       const id = pending.pop()
       if (relevant.has(id) || !nodesById.has(id)) continue
@@ -128,7 +135,7 @@ export function buildSimulationResultGraph(tree, { targetPathsOnly = false } = {
     nodes,
     assets: [...assetsById.values()],
     edges,
-    completeConnections: Array.isArray(tree.performedEdges),
+    completeConnections: Array.isArray(simulationGraph.performedEdges),
     hiddenStepCount: totalSteps - nodes.length,
   }
 }

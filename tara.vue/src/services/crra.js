@@ -17,6 +17,7 @@ export const validCost = (value) => Number.isFinite(value) && value > 0
 // CRRA inputs are not constrained to the TTP score's one-decimal scale.
 export const crraScoreLabel = (value) =>
   Number.isFinite(value) ? String(Number(value.toPrecision(12))) : '-'
+export const crraRatioLabel = (value) => (Number.isFinite(value) ? value.toFixed(2) : '-')
 
 export function createCrraDraft(saved = {}) {
   if (!object(saved)) saved = {}
@@ -67,6 +68,16 @@ export function effectLabel(mapping) {
 
 export function evaluateCountermeasures(vectors, catalog, draft) {
   const selected = new Set(vectors.map((vector) => vector.avId))
+  const sourceSteps = new Map(
+    vectors.map((vector) => [
+      vector.avId,
+      new Set(
+        (vector.cells || [])
+          .filter((cell) => Number.isFinite(cell.riskScore))
+          .flatMap((cell) => (cell.sourceSteps || []).map((step) => step.attackStepId)),
+      ),
+    ]),
+  )
   const weights = Object.fromEntries(
     ['P', 'R'].map((type) => [
       type,
@@ -83,6 +94,9 @@ export function evaluateCountermeasures(vectors, catalog, draft) {
         const hasOverride = local && Object.hasOwn(local, 'effects')
         mappings.set(mapping.avId, {
           ...mapping,
+          unR155Refs: (mapping.unR155Refs || []).filter((ref) =>
+            sourceSteps.get(mapping.avId).has(ref.attackStepId),
+          ),
           effects: normalizedEffects(hasOverride ? local.effects : mapping.effects),
           basis: hasOverride
             ? text(local.basis)
@@ -92,6 +106,24 @@ export function evaluateCountermeasures(vectors, catalog, draft) {
         })
       }
       const list = [...mappings.values()]
+      // These are references through shared Attack Steps, not direct framework equivalences.
+      const refsById = new Map()
+      for (const ref of list.flatMap((mapping) => mapping.unR155Refs)) {
+        if (!refsById.has(ref.id)) {
+          refsById.set(ref.id, { id: ref.id, parts: new Set(), descriptions: new Set() })
+        }
+        const grouped = refsById.get(ref.id)
+        grouped.parts.add(ref.part)
+        const description = text(ref.description).trim()
+        if (description) grouped.descriptions.add(description)
+      }
+      const unR155Refs = [...refsById.values()]
+        .map((ref) => ({
+          id: ref.id,
+          parts: [...ref.parts].sort(),
+          descriptions: [...ref.descriptions].sort(),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }))
       const counts = { P: 0, R: 0 }
       for (const mapping of list) {
         for (const type of ['P', 'R'])
@@ -115,6 +147,7 @@ export function evaluateCountermeasures(vectors, catalog, draft) {
       return {
         ...cm,
         mappings: list,
+        unR155Refs,
         counts,
         weights,
         cost,

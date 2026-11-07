@@ -121,7 +121,7 @@ export function diagnoseAttackPaths(data, options = {}) {
   return report
 }
 
-// Shared text for the list, Diagram panel and Attack Tree. Missing diagnostics
+// Shared text for the path list and Diagram panel. Missing diagnostics
 // never imply absence of a path; a limited search leaves that question open.
 export function describeAttackPathTarget(target, maxHops) {
   if (!target.pathCount) {

@@ -22,9 +22,9 @@ import SusceptibilityMatrixModal from '@/components/SusceptibilityMatrixModal.vu
 import CrraModal from '@/components/CrraModal.vue'
 import AttackEndpointModal from '@/components/AttackEndpointModal.vue'
 import AttackPathsPanel from '@/components/AttackPathsPanel.vue'
-import AttackTreeView from '@/components/AttackTreeView.vue'
-import SimulationTreeView from '@/components/SimulationTreeView.vue'
 import SimulationResultView from '@/components/SimulationResultView.vue'
+import ScenarioReportView from '@/components/ScenarioReportView.vue'
+import RiskReportView from '@/components/RiskReportView.vue'
 import {
   prepareSimulation,
   requestSimulation,
@@ -66,16 +66,16 @@ const pathOptions = reactive({ maxPaths: 30, maxHops: 40 })
 const attackerType = ref('BreadthFirstAttacker')
 const simulationRunning = ref(false)
 const simulationResult = shallowRef(null)
+const scenarioReports = shallowRef(new Map())
+const selectedReportKey = ref('')
 const compromisedAssetIds = computed(() => [
   ...new Set(
-    (simulationResult.value?.tree.performedNodes || []).map((node) => node.cellId).filter(Boolean),
+    (simulationResult.value?.graph.performedNodes || []).map((node) => node.cellId).filter(Boolean),
   ),
 ])
-const hasTree = computed(() => Boolean(pathAnalysis.value || simulationResult.value))
 const availableTabs = computed(() => [
   'diagram',
-  ...(hasTree.value ? ['tree'] : []),
-  ...(simulationResult.value ? ['simulation'] : []),
+  ...(simulationResult.value ? ['simulation', 'scenario', 'report'] : []),
 ])
 watch([compromisedAssetIds, editor], ([ids, instance]) => instance?.setCompromisedAssets(ids), {
   flush: 'sync',
@@ -120,7 +120,7 @@ const simulationHint = computed(() => {
   if (!tmStore.data?.languageGraph) return 'Attach a complete MAL LangGraph in New Diagram.'
   if (!state.attackEndpointCounts.entry || !state.attackEndpointCounts.target)
     return 'Select at least one Entry and one Target attack step in the diagram.'
-  return `Simulate with ${attackerType.value} and display compromised paths to the Targets.`
+  return `Simulate with ${attackerType.value} and display performed attack steps.`
 })
 
 async function simulate() {
@@ -146,6 +146,7 @@ async function simulate() {
       prepared.riskScore,
       prepared.ctsaScore,
       prepared.ttpAssessment,
+      prepared.stepDescription,
     )
   } catch (error) {
     if (simulationController === controller && !controller.signal.aborted)
@@ -163,6 +164,8 @@ function resetPaths() {
   simulationController = null
   simulationRunning.value = false
   simulationResult.value = null
+  scenarioReports.value = new Map()
+  selectedReportKey.value = ''
   pathWorker?.terminate()
   pathWorker = null
   pathSearching.value = false
@@ -175,6 +178,11 @@ function switchTab(tab) {
   if (!availableTabs.value.includes(tab)) return
   if (tab !== 'diagram' && (!flushPendingChanges() || !availableTabs.value.includes(tab))) return
   activeTab.value = tab
+}
+
+function openRiskReport(key) {
+  selectedReportKey.value = key
+  switchTab('report')
 }
 
 async function navigateTabs(event) {
@@ -220,7 +228,6 @@ function findPaths() {
     else {
       pathAnalysis.value = data
       selectedPathIndex.value = sortAttackPathIndexes(data.result, pathSort.value)[0] ?? 0
-      activeTab.value = 'tree'
     }
   }
   worker.onerror = () => {
@@ -427,6 +434,7 @@ async function perform(action) {
       crraDialog.value.openModal({
         snapshot: editor.value.getSnapshot(),
         schema: catalogSchema.value,
+        performedNodes: simulationResult.value?.graph.performedNodes || [],
       })
     } else if (action === 'save' || action === 'extract') {
       if (!flushPendingChanges()) return
@@ -527,7 +535,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="diagram-workspace mt-2" :class="{ 'tree-active': activeTab !== 'diagram' }">
+  <div
+    class="diagram-workspace mt-2"
+    :class="{
+      'result-active': activeTab !== 'diagram',
+      'simulation-active': activeTab === 'simulation',
+    }"
+  >
     <aside
       v-show="activeTab === 'diagram'"
       id="stencil_container"
@@ -561,23 +575,6 @@ onBeforeUnmount(() => {
           Diagram
         </button>
         <button
-          v-if="hasTree"
-          id="tree-tab"
-          type="button"
-          class="nav-link"
-          :class="{ active: activeTab === 'tree' }"
-          role="tab"
-          aria-controls="tree-panel"
-          :aria-selected="activeTab === 'tree'"
-          :tabindex="activeTab === 'tree' ? 0 : -1"
-          @click="switchTab('tree')"
-        >
-          Attack Path
-          <span class="badge text-bg-primary ms-1">{{
-            simulationResult ? simulationResult.tree.nodes.length : pathAnalysis.result.paths.length
-          }}</span>
-        </button>
-        <button
           v-if="simulationResult"
           id="simulation-tab"
           type="button"
@@ -589,10 +586,38 @@ onBeforeUnmount(() => {
           :tabindex="activeTab === 'simulation' ? 0 : -1"
           @click="switchTab('simulation')"
         >
-          Simulator Result
+          Attack Path
           <span class="badge text-bg-danger ms-1">{{
-            simulationResult.tree.performedNodes.length
+            simulationResult.graph.performedNodes.length
           }}</span>
+        </button>
+        <button
+          v-if="simulationResult"
+          id="scenario-tab"
+          type="button"
+          class="nav-link"
+          :class="{ active: activeTab === 'scenario' }"
+          role="tab"
+          aria-controls="scenario-panel"
+          :aria-selected="activeTab === 'scenario'"
+          :tabindex="activeTab === 'scenario' ? 0 : -1"
+          @click="switchTab('scenario')"
+        >
+          Threat Scenario
+        </button>
+        <button
+          v-if="simulationResult"
+          id="report-tab"
+          type="button"
+          class="nav-link"
+          :class="{ active: activeTab === 'report' }"
+          role="tab"
+          aria-controls="report-panel"
+          :aria-selected="activeTab === 'report'"
+          :tabindex="activeTab === 'report' ? 0 : -1"
+          @click="switchTab('report')"
+        >
+          Report
         </button>
       </div>
       <div v-show="activeTab === 'diagram'"><GraphButtonView /></div>
@@ -652,13 +677,6 @@ onBeforeUnmount(() => {
             Red fill: {{ compromisedAssetIds.length }} compromised assets (including Entry).
             <button
               type="button"
-              class="btn btn-sm btn-outline-primary ms-2"
-              @click="switchTab('tree')"
-            >
-              View attack paths
-            </button>
-            <button
-              type="button"
               class="btn btn-sm btn-outline-danger ms-2"
               @click="switchTab('simulation')"
             >
@@ -711,7 +729,7 @@ onBeforeUnmount(() => {
         v-if="simulationResult"
         v-show="activeTab === 'simulation'"
         id="simulation-panel"
-        class="tree-tab"
+        class="result-tab"
         role="tabpanel"
         aria-labelledby="simulation-tab"
       >
@@ -723,28 +741,33 @@ onBeforeUnmount(() => {
         />
       </div>
       <div
-        v-if="hasTree"
-        v-show="activeTab === 'tree'"
-        id="tree-panel"
-        class="tree-tab"
+        v-if="simulationResult"
+        v-show="activeTab === 'scenario'"
+        id="scenario-panel"
+        class="result-tab"
         role="tabpanel"
-        aria-labelledby="tree-tab"
+        aria-labelledby="scenario-tab"
       >
-        <SimulationTreeView
-          v-if="simulationResult"
+        <ScenarioReportView
           :result="simulationResult"
-          :active="activeTab === 'tree'"
-          @reset="resetPaths"
-          @inspect="inspectPathAsset"
+          :active="activeTab === 'scenario'"
+          @reports-change="scenarioReports = $event"
+          @open-report="openRiskReport"
         />
-        <AttackTreeView
-          v-else
-          :analysis="pathAnalysis"
-          v-model:selected-index="selectedPathIndex"
-          v-model:sort-by="pathSort"
-          :active="activeTab === 'tree'"
-          @reset="resetPaths"
-          @inspect="inspectPathAsset"
+      </div>
+      <div
+        v-if="simulationResult"
+        v-show="activeTab === 'report'"
+        id="report-panel"
+        class="result-tab"
+        role="tabpanel"
+        aria-labelledby="report-tab"
+      >
+        <RiskReportView
+          v-model:selected-key="selectedReportKey"
+          :result="simulationResult"
+          :reports="scenarioReports"
+          @open-scenarios="switchTab('scenario')"
         />
       </div>
     </section>
@@ -816,11 +839,15 @@ onBeforeUnmount(() => {
   align-items: stretch;
 }
 
-.diagram-workspace.tree-active {
+.diagram-workspace.result-active {
   grid-template-columns: minmax(0, 1fr);
 }
+.diagram-workspace.simulation-active {
+  height: auto;
+  min-height: max(620px, calc(100dvh - 88px));
+}
 .diagram-tab,
-.tree-tab {
+.result-tab {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -849,7 +876,7 @@ onBeforeUnmount(() => {
 .graph-container {
   position: absolute;
   inset: 0;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid #f0f0f0;
   border-top: 0;
   background-color: #fff;

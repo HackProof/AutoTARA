@@ -13,6 +13,7 @@ import {
 import { loadDrawioRuntime } from '@/services/drawio/runtime.js'
 import { createSimulationResultDiagram } from '@/services/drawio/simulationResult.js'
 import { riskScoreClass, riskScoreLabel } from '@/services/ttpScoring.js'
+import SimulationAttackVectors from './SimulationAttackVectors.vue'
 
 const props = defineProps({
   result: { type: Object, required: true },
@@ -27,12 +28,13 @@ const targetPathsOnly = ref(true)
 const assetSortBy = ref('iteration-asc')
 const listView = ref('flow')
 const flowSortBy = ref('iteration-asc')
+const attackVectorsExpanded = ref(false)
 const ctsaScore = (node) => getSimulationCtsaScore(node)?.value ?? null
 const ready = ref(false)
 const error = ref('')
 const zoom = ref(100)
 const graph = computed(() =>
-  buildSimulationResultGraph(props.result.tree, { targetPathsOnly: targetPathsOnly.value }),
+  buildSimulationResultGraph(props.result.graph, { targetPathsOnly: targetPathsOnly.value }),
 )
 const layout = computed(() => layoutSimulationResult(graph.value, expandedAssets.value))
 const sortedAssets = computed(() => sortSimulationAssets(graph.value.assets, assetSortBy.value))
@@ -47,8 +49,10 @@ const timelineIterationLabel = (group) => {
 const selectedAsset = computed(() =>
   graph.value.assets.find((asset) => asset.id === selectedAssetId.value),
 )
-const reachedCount = computed(() => props.result.tree.targets.filter((node) => node.reached).length)
-const afrResults = computed(() => summarizeSimulationAfr(props.result.tree))
+const reachedCount = computed(
+  () => props.result.graph.targets.filter((node) => node.reached).length,
+)
+const afrResults = computed(() => summarizeSimulationAfr(props.result.graph))
 const afrClass = (rating) => {
   if (rating === 2) return 'text-bg-danger'
   if (rating === 1.5) return 'text-bg-warning'
@@ -151,7 +155,7 @@ onMounted(async () => {
     ready.value = true
     render()
   } catch (cause) {
-    error.value = cause.message || 'Unable to display the Simulator Result diagram.'
+    error.value = cause.message || 'Unable to display the Attack Path diagram.'
   }
 })
 onBeforeUnmount(() => {
@@ -161,7 +165,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="simulation-result border" aria-label="Simulator Result workspace">
+  <section class="simulation-result border" aria-label="Attack Path workspace">
     <div class="result-summary p-2 border-bottom small" role="status">
       <strong>{{ result.attackerType }}</strong>
       <span class="badge" :class="result.partial ? 'text-bg-warning' : 'text-bg-secondary'">
@@ -169,9 +173,17 @@ onBeforeUnmount(() => {
       </span>
       <span>{{ graph.nodes.length }} compromised steps · {{ graph.assets.length }} assets</span>
       <span v-if="targetPathsOnly">{{ graph.hiddenStepCount }} unrelated steps hidden</span>
-      <span>{{ reachedCount }}/{{ result.tree.targets.length }} Targets reached</span>
+      <span>{{ reachedCount }}/{{ result.graph.targets.length }} Targets reached</span>
       <span>{{ result.steps }} actions</span>
+      <span>Seed: {{ result.seed }} · TTC: {{ result.ttcMode }}</span>
     </div>
+    <details class="small p-2 border-bottom">
+      <summary>Scenario and simulation files</summary>
+      <pre class="scenario mt-2">{{ result.scenario }}</pre>
+      <div class="d-flex flex-wrap gap-3">
+        <a v-for="(url, name) in result.artifacts" :key="name" :href="url" download>{{ name }}</a>
+      </div>
+    </details>
     <div class="result-body">
       <aside class="result-assets p-2 border-end" aria-label="Compromised assets and attack steps">
         <h2 class="h6">{{ listView === 'flow' ? 'Compromise flow' : 'Compromised assets' }}</h2>
@@ -377,9 +389,9 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <details class="small border-top pt-2">
-          <summary>Targets · {{ reachedCount }}/{{ result.tree.targets.length }} reached</summary>
+          <summary>Targets · {{ reachedCount }}/{{ result.graph.targets.length }} reached</summary>
           <ul class="ps-3 mt-2 mb-0">
-            <li v-for="target in result.tree.targets" :key="target.id" class="text-break mb-1">
+            <li v-for="target in result.graph.targets" :key="target.id" class="text-break mb-1">
               {{ target.fullName }}
               <span :class="target.reached ? 'text-success' : 'text-secondary'">
                 · {{ target.reached ? 'Reached' : 'Not reached' }}
@@ -391,12 +403,12 @@ onBeforeUnmount(() => {
       <div class="result-main">
         <div class="result-toolbar p-2 border-bottom">
           <h2 class="h6 mb-0 me-auto">Compromised assets</h2>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Simulator Result zoom">
+          <div class="btn-group btn-group-sm" role="group" aria-label="Attack Path zoom">
             <button
               type="button"
               class="btn btn-outline-secondary"
               :disabled="!ready || !graph.nodes.length"
-              aria-label="Zoom out Simulator Result"
+              aria-label="Zoom out Attack Path"
               @click="diagram?.zoomOut()"
             >
               −
@@ -405,7 +417,7 @@ onBeforeUnmount(() => {
               type="button"
               class="btn btn-outline-secondary"
               :disabled="!ready || !graph.nodes.length"
-              aria-label="Reset Simulator Result zoom"
+              aria-label="Reset Attack Path zoom"
               @click="diagram?.home()"
             >
               {{ zoom }}%
@@ -414,7 +426,7 @@ onBeforeUnmount(() => {
               type="button"
               class="btn btn-outline-secondary"
               :disabled="!ready || !graph.nodes.length"
-              aria-label="Zoom in Simulator Result"
+              aria-label="Zoom in Attack Path"
               @click="diagram?.zoomIn()"
             >
               +
@@ -498,19 +510,35 @@ onBeforeUnmount(() => {
               </tbody>
             </table>
           </div>
-          <details class="text-secondary mt-2">
-            <summary>AFR calculation and rating thresholds</summary>
-            <p class="mb-1 mt-1">
-              A(π) = (Proximity max + Required Skills max + Required Resources max) / 3. 1 ≤ A &lt;
-              2: 0 (Very Low); 2 ≤ A &lt; 3: 1 (Low); 3 ≤ A &lt; 4: 1.5 (Medium); 4 ≤ A ≤ 5: 2
-              (High). Classification uses the unrounded score.
-            </p>
-            <p class="mb-0">
-              Only steps with all three TTP factor ratings from 1 to 5 are assessed. Saved asset
-              assessments take precedence over catalog ratings. Missing steps are excluded and
-              reported in coverage; a partial assessment may underestimate difficulty. The labels
-              follow the supplied rubric: higher raw values mean greater attack difficulty.
-            </p>
+          <details class="afr-vectors mt-2">
+            <summary>Attack Vector List</summary>
+            <div class="d-flex justify-content-end mt-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :aria-pressed="attackVectorsExpanded"
+                aria-controls="simulation-attack-vector-list"
+                @click="attackVectorsExpanded = !attackVectorsExpanded"
+              >
+                <i
+                  class="fa-solid me-1"
+                  :class="attackVectorsExpanded ? 'fa-compress' : 'fa-expand'"
+                  aria-hidden="true"
+                ></i>
+                {{ attackVectorsExpanded ? 'Shrink' : 'Expand' }}
+              </button>
+            </div>
+            <div
+              id="simulation-attack-vector-list"
+              class="afr-vector-list mt-2"
+              :class="{ 'afr-vector-list-expanded': attackVectorsExpanded }"
+            >
+              <SimulationAttackVectors
+                :results="afrResults"
+                :selected-id="selected?.id"
+                @select="select"
+              />
+            </div>
           </details>
         </section>
         <div class="px-2 py-2 border-bottom small">
@@ -573,7 +601,7 @@ onBeforeUnmount(() => {
             }}
           </p>
           <p v-else-if="!ready && !error" class="result-empty p-4 text-secondary" role="status">
-            Loading Simulator Result diagram…
+            Loading Attack Path diagram…
           </p>
         </div>
         <div class="result-toolbar small p-2 border-top" aria-live="polite">
@@ -624,6 +652,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.scenario {
+  max-height: 12rem;
+  overflow: auto;
+}
 .simulation-result,
 .result-main {
   display: flex;
@@ -643,18 +675,25 @@ onBeforeUnmount(() => {
 .result-body {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  align-items: start;
   flex: 1;
   min-height: 0;
 }
 .result-assets {
+  max-height: max(400px, calc(100dvh - 200px));
   overflow-y: auto;
-}
-.afr-table {
-  max-height: 210px;
 }
 .afr-table th,
 .afr-table td {
   min-width: 90px;
+}
+.afr-vector-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.afr-vector-list-expanded {
+  max-height: none;
+  overflow-y: visible;
 }
 .timeline-iteration {
   position: relative;
@@ -680,13 +719,13 @@ onBeforeUnmount(() => {
 }
 .result-canvas-shell {
   position: relative;
-  flex: 1;
-  min-height: 300px;
+  flex: none;
+  height: clamp(400px, 60dvh, 800px);
 }
 .result-canvas {
   position: absolute;
   inset: 0;
-  overflow: auto;
+  overflow: hidden;
   background: #fff;
   background-image: radial-gradient(#d6dce2 0.75px, transparent 0.75px);
   background-size: 12px 12px;
@@ -714,9 +753,6 @@ onBeforeUnmount(() => {
   .result-assets {
     max-height: 220px;
     border-bottom: 1px solid #dee2e6;
-  }
-  .result-main {
-    min-height: 500px;
   }
 }
 </style>

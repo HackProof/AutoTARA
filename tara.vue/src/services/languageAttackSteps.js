@@ -90,6 +90,10 @@ export function mergeLanguageAttackSteps(rows, languageGraph, assetTypes) {
           step.info?.developer ||
           step.info?.modeler ||
           step.definition ||
+          definition?.info?.user ||
+          definition?.info?.developer ||
+          definition?.info?.modeler ||
+          definition?.definition ||
           row?.definition ||
           '',
         hidden:

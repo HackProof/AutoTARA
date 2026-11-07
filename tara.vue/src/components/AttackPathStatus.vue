@@ -58,7 +58,7 @@ const reasons = {
         </li>
       </ul>
       <p v-if="metric.blockedPrerequisites.length > 100" class="text-secondary">
-        Showing the first 100 causes. Expand the Attack Tree to inspect other dependencies.
+        Showing the first 100 causes. Inspect the prerequisite details for other dependencies.
       </p>
     </details>
   </component>

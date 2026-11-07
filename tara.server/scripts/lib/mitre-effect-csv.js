@@ -43,8 +43,9 @@ export async function syncMitreEffectSources(connection) {
   const { rows: invalid } = await connection.query(`
     SELECT e."ID" FROM jsonb_to_recordset($1::jsonb)
       AS e(csv_file text, "ID" text, "STIX ID" text, name text)
-    LEFT JOIN vehicle_lang.mitre_mitigation c ON c.mitigation_id = e."ID"
-    WHERE c.mitigation_id IS NULL OR c.stix_id IS DISTINCT FROM e."STIX ID"
+    LEFT JOIN vehicle_lang.mitre_mitigation_alias a ON a.source_mitigation_id = e."ID"
+    LEFT JOIN vehicle_lang_source.mitre_mitigations c ON c.source_row = a.source_row
+    WHERE a.mitigation_id IS NULL OR c."STIX ID" IS DISTINCT FROM e."STIX ID"
        OR c.name IS DISTINCT FROM e.name
        OR (SELECT count(*) FROM vehicle_lang_source.mitre_effects s WHERE s."ID" = e."ID") > 1
        OR EXISTS (SELECT FROM vehicle_lang_source.mitre_effects s

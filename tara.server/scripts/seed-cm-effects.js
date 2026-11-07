@@ -19,9 +19,10 @@ try {
     GROUP BY classification_status, effect_types ORDER BY effect_types
   `);
   const { rows: missing } = await connection.query(`
-    SELECT c.mitigation_id FROM vehicle_lang.mitre_mitigation c
-    JOIN vehicle_lang_source.mitre_effects e ON e."ID" = c.mitigation_id
-      AND e.effect IS NOT NULL
+    SELECT DISTINCT c.mitigation_id FROM vehicle_lang.mitre_mitigation c
+    JOIN vehicle_lang.mitre_mitigation_alias a USING (mitigation_id)
+    JOIN vehicle_lang_source.mitre_effects e ON e."ID" = a.source_mitigation_id
+      AND e.effect IS NOT NULL AND e."ID" = c.mitigation_id
     LEFT JOIN vehicle_lang.mitre_mitigation_effect_profile p USING (mitigation_id)
     WHERE p.mitigation_id IS NULL ORDER BY c.mitigation_id
   `);

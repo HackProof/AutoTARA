@@ -262,17 +262,26 @@ CREATE TABLE vehicle_lang.mitre_technique (
     relationship_citations text
 );
 CREATE TABLE vehicle_lang.mitre_mitigation (
+    -- A shared name has one representative ID (Enterprise first).
     mitigation_id text PRIMARY KEY CHECK (mitigation_id ~ '^M[0-9]{4}$'),
-    stix_id text NOT NULL UNIQUE,
-    name text NOT NULL,
-    description text NOT NULL,
-    url text NOT NULL,
-    created_on date NOT NULL,
-    modified_on date NOT NULL,
-    domain text NOT NULL CHECK (domain IN ('ics-attack', 'enterprise-attack')),
-    object_version text NOT NULL,
+    stix_id text UNIQUE,
+    name text NOT NULL CHECK (length(btrim(name)) > 0),
+    description text,
+    url text,
+    created_on date,
+    modified_on date,
+    domain text CHECK (domain IN ('ics-attack', 'enterprise-attack')),
+    object_version text,
     relationship_citations text
 );
+CREATE UNIQUE INDEX mitre_mitigation_name_idx ON vehicle_lang.mitre_mitigation (lower(btrim(name)));
+CREATE TABLE vehicle_lang.mitre_mitigation_alias (
+    source_mitigation_id text PRIMARY KEY CHECK (source_mitigation_id ~ '^M[0-9]{4}$'),
+    mitigation_id text NOT NULL REFERENCES vehicle_lang.mitre_mitigation,
+    source_row bigint NOT NULL UNIQUE REFERENCES vehicle_lang_source.mitre_mitigations
+);
+CREATE INDEX mitre_mitigation_alias_canonical_idx ON vehicle_lang.mitre_mitigation_alias (mitigation_id);
+COMMENT ON TABLE vehicle_lang.mitre_mitigation_alias IS 'Original MITRE IDs mapped to one mitigation per normalized name. Original metadata remains in vehicle_lang_source.mitre_mitigations.';
 CREATE TABLE vehicle_lang.mitre_technique_mitigation (
     relationship_id text PRIMARY KEY,
     mitigation_id text NOT NULL REFERENCES vehicle_lang.mitre_mitigation,
@@ -404,7 +413,7 @@ COMMENT ON COLUMN vehicle_lang.mitre_mitigation_effect_profile.cost IS 'Relative
 CREATE TABLE vehicle_lang.attack_step_semantics (
     attack_step_id text PRIMARY KEY REFERENCES vehicle_lang.mal_attack_step,
     semantic_category text NOT NULL CHECK (semantic_category IN
-        ('attack_behavior','acquired_or_induced_state','attack_attempt','auxiliary_step')),
+        ('Attack behavior','State / Condition','Auxiliary step','abstract asset')),
     classification_source text NOT NULL CHECK (length(trim(classification_source)) > 0),
     classification_reason text, classification_version text,
     mapping_status_at_review text NOT NULL CHECK (mapping_status_at_review IN ('mapped','unmapped')),

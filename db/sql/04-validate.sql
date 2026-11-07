@@ -4,7 +4,7 @@ DECLARE src bigint; dst bigint; pair record;
 BEGIN
     FOR pair IN SELECT * FROM (VALUES
         ('mitre_techniques','mitre_technique'),
-        ('mitre_mitigations','mitre_mitigation'),
+        ('mitre_mitigations','mitre_mitigation_alias'),
         ('mitre_mitigation_techniques','mitre_technique_mitigation'),
         ('mitre_detection_relationships','mitre_technique_detection'),
         ('un_r155_part_a','un_r155_attack_method'),
@@ -21,6 +21,23 @@ BEGIN
             RAISE EXCEPTION 'Row loss: % (%) -> % (%)', pair.source_name, src, pair.target_name, dst;
         END IF;
     END LOOP;
+    IF (SELECT count(*) FROM vehicle_lang.mitre_mitigation) <>
+       (SELECT count(DISTINCT lower(btrim(name))) FROM vehicle_lang_source.mitre_mitigations)
+       OR EXISTS (
+           SELECT FROM vehicle_lang.mitre_mitigation_alias a
+           FULL JOIN vehicle_lang_source.mitre_mitigations s USING (source_row)
+           LEFT JOIN vehicle_lang.mitre_mitigation c ON c.mitigation_id = a.mitigation_id
+           WHERE a.source_mitigation_id IS DISTINCT FROM s."ID" OR c.mitigation_id IS NULL
+              OR lower(btrim(c.name)) IS DISTINCT FROM lower(btrim(s.name))
+       ) THEN RAISE EXCEPTION 'MITRE mitigation canonical identity/alias mismatch'; END IF;
+    IF EXISTS (
+        SELECT FROM vehicle_lang_source.mitre_mitigation_techniques s
+        FULL JOIN vehicle_lang.mitre_technique_mitigation r USING (source_row)
+        LEFT JOIN vehicle_lang.mitre_mitigation_alias a ON a.source_mitigation_id = s."source ID"
+        WHERE r.relationship_id IS DISTINCT FROM s."STIX ID"
+           OR r.mitigation_id IS DISTINCT FROM a.mitigation_id
+           OR r.technique_id IS DISTINCT FROM s."target ID"
+    ) THEN RAISE EXCEPTION 'MITRE mitigation relationship differs from source'; END IF;
     IF EXISTS (
         SELECT FROM vehicle_lang_source.mal_attack_steps s
         WHERE s.qualified_name IS DISTINCT FROM s.asset || '.' || s.name
@@ -51,24 +68,49 @@ BEGIN
     INTO src FROM vehicle_lang_source.technique_mappings;
     IF src <> (SELECT count(*) FROM vehicle_lang.technique_mapping) THEN
         RAISE EXCEPTION 'Mapping edge loss'; END IF;
+    -- Explicit ID lists define relations; review statuses remain source metadata.
     IF EXISTS (
-        SELECT FROM vehicle_lang_source.technique_mappings
-        WHERE (mitre_mapping_status = 'mapped') IS DISTINCT FROM (mitre_technique_id IS NOT NULL)
-    ) THEN RAISE EXCEPTION 'Unconfirmed MITRE technique must not become a mapping'; END IF;
+        WITH expected AS (
+            SELECT s.attack_step_id, e.mitre_technique_id, e.un_r155_attack_id,
+                   m.inherited::boolean AS inherited, m.mapping_snapshot_date::date AS snapshot_date,
+                   m.mitre_attack_domain, m.mitre_attack_version, m.source_row
+            FROM vehicle_lang_source.technique_mappings m
+            JOIN vehicle_lang.mal_attack_step s ON s.step_key = m.language || ':' || m.attack_step
+            CROSS JOIN LATERAL (
+                SELECT x AS mitre_technique_id, NULL::text AS un_r155_attack_id
+                FROM unnest(string_to_array(m.mitre_technique_id, ';')) x
+                UNION ALL
+                SELECT NULL::text, x FROM unnest(string_to_array(m.un_r155_attack_id, ';')) x
+            ) e
+        )
+        (SELECT * FROM expected
+         EXCEPT ALL
+         SELECT attack_step_id, mitre_technique_id, un_r155_attack_id, inherited,
+                snapshot_date, mitre_attack_domain, mitre_attack_version, source_row
+         FROM vehicle_lang.technique_mapping)
+        UNION ALL
+        (SELECT attack_step_id, mitre_technique_id, un_r155_attack_id, inherited,
+                snapshot_date, mitre_attack_domain, mitre_attack_version, source_row
+         FROM vehicle_lang.technique_mapping
+         EXCEPT ALL
+         SELECT * FROM expected)
+    ) THEN RAISE EXCEPTION 'Mapping relations differ from source CSV IDs'; END IF;
     -- Category/threat lists are sets, not positional pairs: a CSV row may have
     -- three attack IDs sharing just two category/threat IDs.
     IF EXISTS (
         SELECT FROM vehicle_lang_source.technique_mappings m
         CROSS JOIN LATERAL unnest(string_to_array(m.un_r155_attack_id, ';')) id
         JOIN vehicle_lang.un_r155_attack_method a ON a.attack_method_id = id
-        WHERE NOT (a.category_id = ANY(string_to_array(m.un_r155_category_id, ';')))
-           OR NOT (a.threat_id = ANY(string_to_array(m.un_r155_threat_id, ';')))
+        WHERE (m.un_r155_category_id IS NOT NULL
+               AND NOT (a.category_id = ANY(string_to_array(m.un_r155_category_id, ';'))))
+           OR (m.un_r155_threat_id IS NOT NULL
+               AND NOT (a.threat_id = ANY(string_to_array(m.un_r155_threat_id, ';'))))
     ) THEN RAISE EXCEPTION 'UN R155 category/threat metadata mismatch'; END IF;
     IF EXISTS (
         SELECT FROM vehicle_lang_source.mitre_mitigation_techniques r
-        JOIN vehicle_lang.mitre_mitigation m ON m.mitigation_id = r."source ID"
+        JOIN vehicle_lang_source.mitre_mitigations m ON m."ID" = r."source ID"
         JOIN vehicle_lang.mitre_technique t ON t.technique_id = r."target ID"
-        WHERE r."source name" IS DISTINCT FROM m.name OR r."source ref" IS DISTINCT FROM m.stix_id
+        WHERE r."source name" IS DISTINCT FROM m.name OR r."source ref" IS DISTINCT FROM m."STIX ID"
            OR (r."target name" IS DISTINCT FROM t.name
                AND right(t.name, length(r."target name") + 2) IS DISTINCT FROM ': ' || r."target name")
            OR r."target ref" IS DISTINCT FROM t.stix_id
@@ -85,10 +127,18 @@ BEGIN
     ) THEN RAISE EXCEPTION 'MITRE detection name/STIX/type mismatch'; END IF;
     IF EXISTS (
         SELECT FROM vehicle_lang_source.mitre_effects e
-        JOIN vehicle_lang.mitre_mitigation c ON c.mitigation_id = e."ID"
-        WHERE e."STIX ID" IS DISTINCT FROM c.stix_id OR e.name IS DISTINCT FROM c.name
+        LEFT JOIN vehicle_lang_source.mitre_mitigations c ON c."ID" = e."ID"
+        WHERE c."ID" IS NULL OR e."STIX ID" IS DISTINCT FROM c."STIX ID" OR e.name IS DISTINCT FROM c.name
     ) OR (SELECT count(*) FROM vehicle_lang.mitre_mitigation_effect_profile) <>
-         (SELECT count(*) FROM vehicle_lang_source.mitre_effects WHERE effect IS NOT NULL)
+         (SELECT count(DISTINCT a.mitigation_id) FROM vehicle_lang_source.mitre_effects e
+          JOIN vehicle_lang.mitre_mitigation_alias a ON a.source_mitigation_id = e."ID"
+          WHERE e.effect IS NOT NULL AND e."ID" = a.mitigation_id)
+       OR EXISTS (
+           SELECT FROM vehicle_lang.mitre_mitigation_effect_profile p
+           JOIN vehicle_lang_source.mitre_effects e USING (source_row)
+           LEFT JOIN vehicle_lang.mitre_mitigation_alias a ON a.source_mitigation_id = e."ID"
+           WHERE p.mitigation_id IS DISTINCT FROM a.mitigation_id
+       )
     THEN RAISE EXCEPTION 'MITRE effect coverage/name/STIX mismatch'; END IF;
     IF EXISTS (
         SELECT FROM vehicle_lang.mitre_mitigation_effect_profile p
@@ -112,9 +162,25 @@ BEGIN
         SELECT FROM vehicle_lang.attack_step_ctsa c JOIN vehicle_lang.mal_attack_step s USING (attack_step_id)
         WHERE c.asset_id <> s.asset_id
     ) THEN RAISE EXCEPTION 'CTSA asset mismatch'; END IF;
+    IF EXISTS (
+        SELECT FROM vehicle_lang.attack_step_ctsa c
+        JOIN vehicle_lang_source.attack_step_ctsa s USING (source_row)
+        WHERE (c.attack_step_id, c.asset_id,
+               c.proximity, c.locality, c.recovery_time, c.restoration_costs, c.impact_confidentiality, c.impact_integrity, c.impact_availability, c.prior_use, c.required_skills, c.required_resources, c.stealth, c.attribution, c.ctsa_score)
+           IS DISTINCT FROM
+              (s.attack_step_id, s.asset_id,
+               s.proximity::smallint, s.locality::smallint, s.recovery_time::smallint, s.restoration_costs::smallint, s.impact_confidentiality::smallint, s.impact_integrity::smallint, s.impact_availability::smallint, s.prior_use::smallint, s.required_skills::smallint, s.required_resources::smallint, s.stealth::smallint, s.attribution::smallint, s.ctsa_score::numeric)
+    ) THEN RAISE EXCEPTION 'CTSA values differ from source CSV'; END IF;
     IF (SELECT count(*) FROM vehicle_lang.v_attack_step_catalog) <>
        (SELECT count(*) FROM vehicle_lang.mal_attack_step)
     THEN RAISE EXCEPTION 'Catalog must contain exactly one row per Attack Step'; END IF;
+    IF EXISTS (
+        SELECT FROM vehicle_lang.attack_step_semantics p
+        JOIN vehicle_lang.mal_attack_step s USING (attack_step_id)
+        JOIN vehicle_lang_source.technique_mappings m
+          ON s.step_key = m.language || ':' || m.attack_step
+        WHERE p.semantic_category IS DISTINCT FROM m.semantic_category
+    ) THEN RAISE EXCEPTION 'Semantic category differs from the mapping CSV'; END IF;
 END $$;
 ANALYZE vehicle_lang.mal_asset;
 ANALYZE vehicle_lang.mal_attack_step;

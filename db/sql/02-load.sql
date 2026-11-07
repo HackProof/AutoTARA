@@ -63,14 +63,33 @@ SELECT "ID", "STIX ID", name, description, url, to_date(created, 'DD FMMonth YYY
        to_date("last modified", 'DD FMMonth YYYY'), domain, version, tactics,
        NULLIF(platforms, 'None'), contributors, "relationship citations"
 FROM vehicle_lang_source.mitre_techniques;
+-- Merge only equal names after trimming/case normalization; retain domain-only names.
+-- Prefer the Enterprise ID for a shared mitigation, and keep every original ID as an alias.
 INSERT INTO vehicle_lang.mitre_mitigation
-SELECT "ID", "STIX ID", name, description, url, to_date(created, 'DD FMMonth YYYY'),
-       to_date("last modified", 'DD FMMonth YYYY'), split_part(domain, ',', 1), version, "relationship citations"
-FROM vehicle_lang_source.mitre_mitigations;
+WITH ranked AS (
+    SELECT *, count(*) OVER names AS copies,
+           row_number() OVER (names ORDER BY (split_part(domain, ',', 1) = 'enterprise-attack') DESC, "ID") AS preference
+    FROM vehicle_lang_source.mitre_mitigations
+    WINDOW names AS (PARTITION BY lower(btrim(name)))
+)
+SELECT "ID", CASE WHEN copies = 1 THEN "STIX ID" END, name,
+       CASE WHEN copies = 1 THEN description END,
+       CASE WHEN copies = 1 THEN url END,
+       CASE WHEN copies = 1 THEN to_date(created, 'DD FMMonth YYYY') END,
+       CASE WHEN copies = 1 THEN to_date("last modified", 'DD FMMonth YYYY') END,
+       CASE WHEN copies = 1 THEN split_part(domain, ',', 1) END,
+       CASE WHEN copies = 1 THEN version END,
+       CASE WHEN copies = 1 THEN "relationship citations" END
+FROM ranked WHERE preference = 1;
+INSERT INTO vehicle_lang.mitre_mitigation_alias
+SELECT s."ID", c.mitigation_id, s.source_row
+FROM vehicle_lang_source.mitre_mitigations s
+JOIN vehicle_lang.mitre_mitigation c ON lower(btrim(c.name)) = lower(btrim(s.name));
 INSERT INTO vehicle_lang.mitre_technique_mitigation
-SELECT "STIX ID", "source ID", "target ID", "mapping type", "mapping description",
-       to_date(created, 'DD FMMonth YYYY'), to_date("last modified", 'DD FMMonth YYYY'), source_row
-FROM vehicle_lang_source.mitre_mitigation_techniques;
+SELECT r."STIX ID", a.mitigation_id, r."target ID", r."mapping type", r."mapping description",
+       to_date(r.created, 'DD FMMonth YYYY'), to_date(r."last modified", 'DD FMMonth YYYY'), r.source_row
+FROM vehicle_lang_source.mitre_mitigation_techniques r
+JOIN vehicle_lang.mitre_mitigation_alias a ON a.source_mitigation_id = r."source ID";
 INSERT INTO vehicle_lang.un_r155_attack_method
 SELECT attack_method_id, category_id, category_description, part, threat_id, threat_description, attack_method
 FROM vehicle_lang_source.un_r155_part_a;
@@ -109,6 +128,7 @@ FROM vehicle_lang_source.mal_attack_step_defenses r
 JOIN vehicle_lang.mal_attack_step s ON s.step_key = lower(split_part(r.attack_step_id, ':', 1)) || ':' || split_part(r.attack_step_id, ':', 2)
 JOIN vehicle_lang.mal_defense d ON lower(split_part(d.defense_id, ':', 1)) || ':' || split_part(d.defense_id, ':', 2)
  = lower(split_part(r.defense_id, ':', 1)) || ':' || split_part(r.defense_id, ':', 2);
+-- Explicit ID lists define relations even when retained review statuses differ.
 INSERT INTO vehicle_lang.technique_mapping
     (attack_step_id, mitre_technique_id, un_r155_attack_id, inherited, snapshot_date,
      mitre_attack_domain, mitre_attack_version, source_row)
